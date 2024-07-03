@@ -3,7 +3,7 @@
 ## 注意！
 本质上只是在 [N_m3u8DL-RE_ShellGUI](https://github.com/RoadIsLong/N_m3u8DL-RE_ShellGUI) 大佬的脚本基础上对 macOS 进行了优化，因此并没有太大的改变。
 
-默认下载路径和缓存路径以及 ffmpeg 路径可以在脚本文件的**菜单**注释一栏进行修改。默认路径在 `Download/m3u8DL` 文件夹下，ffmpeg 为 brew 的默认路径。
+默认下载路径和缓存路径以及 ffmpeg 路径可以在脚本文件的**目录设置**注释一栏进行修改。默认路径在 `Download/m3u8DL` 文件夹下，ffmpeg 为 brew 的默认路径。
 
 ## 使用说明
 1. 下载最新的 [N_m3u8DL-RE](https://github.com/nilaoda/N_m3u8DL-RE)（因为它是运行本脚本所必须的核心程序），将它放置在本脚本所在根目录下。
