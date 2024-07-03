@@ -15,15 +15,16 @@
 
 3. 给脚本添加执行权限：
     ```sh
-    chmod +x 3u8DL.sh
+    chmod +x m3u8DL.sh
+    chmod +x N_m3u8DL-RE
     ```
 
 4. 准备工作完成后，运行脚本：
     ```sh
-    ./3u8DL.sh
+    ./m3u8DL.sh
     ```
 
-### 补充说明
+## 补充说明
 批量下载文件的格式为 `名称$链接`，多个资源可以多行粘贴，例如：
 > 第01集$https://v.gsuus.com/play/oeE2D4Ka/index.m3u8  
 > 第02集$https://v.gsuus.com/play/7axBQXnd/index.m3u8  
