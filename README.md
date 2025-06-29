@@ -7,6 +7,17 @@
 
 ---
 
+## 文件结构
+N_m3u8DL-RE_ShellGUI_macOS/
+├── start.sh # 快速启动脚本
+├── install.sh # 一键安装脚本
+├── auto_update.sh # 自动更新脚本
+├── m3u8DL_enhanced.sh # 主程序
+├── advanced.sh # 高级功能
+└── README.md # 说明文档
+
+---
+
 ## 主要特性
 
 - 一键自动安装 N_m3u8DL-RE 和 ffmpeg，无需手动下载
