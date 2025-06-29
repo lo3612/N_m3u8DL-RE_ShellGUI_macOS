@@ -35,7 +35,20 @@ main() {
     # 自动赋予执行权限
     auto_set_exec_permissions
     
-    echo -e "${CYAN}现在可以运行 ./start.sh 启动程序${RESET}"
+    echo -e "${GREEN}${BOLD}安装完成!${RESET}"
+    echo ""
+    
+    # 询问是否立即启动
+    echo -e "${CYAN}是否立即启动程序? (y/n)${RESET}"
+    read -r response
+    if [[ "$response" =~ ^[Yy]$ ]]; then
+        echo ""
+        echo -e "${BLUE}启动 N_m3u8DL-RE...${RESET}"
+        echo ""
+        ./m3u8DL_enhanced.sh
+    else
+        echo -e "${CYAN}您可以稍后运行 ./start.sh 启动程序${RESET}"
+    fi
 }
 
 # 运行主函数
