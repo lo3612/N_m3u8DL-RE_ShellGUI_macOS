@@ -45,7 +45,7 @@ check_network() {
 # 获取本地版本
 get_local_version() {
     if [[ -f "N_m3u8DL-RE" ]]; then
-        local version=$("./N_m3u8DL-RE" --version 2>/dev/null | grep -o 'v[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1)
+        local version=$("./N_m3u8DL-RE" --version 2>/dev/null | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1)
         echo "$version"
     else
         echo ""
@@ -61,6 +61,8 @@ get_remote_version() {
     fi
     
     local version=$(echo "$response" | grep -o '"tag_name": "[^"]*"' | cut -d'"' -f4)
+    # 移除v前缀，只保留版本号部分
+    version=$(echo "$version" | sed 's/^v//')
     echo "$version"
 }
 
@@ -147,7 +149,7 @@ download_n_m3u8dl_re() {
 
 # 下载ffmpeg
 download_ffmpeg() {
-    echo -e "${BLUE}开始下载ffmpeg...${RESET}"
+    echo -e "${BLUE}开始检查ffmpeg更新...${RESET}"
     
     if ! check_network; then
         return 1
@@ -159,6 +161,16 @@ download_ffmpeg() {
         return 1
     fi
     
+    # 检查本地ffmpeg是否存在
+    if [[ ! -f "$SCRIPT_DIR/ffmpeg" ]]; then
+        echo -e "${BLUE}本地未找到ffmpeg，开始下载...${RESET}"
+    else
+        # 获取本地版本
+        local local_version=$("$SCRIPT_DIR/ffmpeg" -version | head -1)
+        echo -e "${BLUE}本地版本: ${local_version}${RESET}"
+    fi
+    
+    # 下载并检查版本
     local temp_dir="$SCRIPT_DIR/temp"
     mkdir -p "$temp_dir"
     cd "$temp_dir"
@@ -187,7 +199,20 @@ download_ffmpeg() {
         return 1
     fi
     
-    # 备份旧版本
+    # 检查版本
+    if [[ -f "$SCRIPT_DIR/ffmpeg" ]]; then
+        local remote_version=$("$ffmpeg_executable" -version | head -1)
+        echo -e "${BLUE}远程版本: ${remote_version}${RESET}"
+        
+        if [[ "$local_version" == "$remote_version" ]]; then
+            echo -e "${GREEN}ffmpeg 已是最新版本，无需更新${RESET}"
+            cd "$SCRIPT_DIR"
+            rm -rf "$temp_dir"
+            return 0
+        fi
+    fi
+    
+    # 需要更新，备份旧版本
     if [[ -f "$SCRIPT_DIR/ffmpeg" ]]; then
         mv "$SCRIPT_DIR/ffmpeg" "$SCRIPT_DIR/ffmpeg.backup"
     fi
@@ -222,7 +247,11 @@ check_updates() {
         return 0
     fi
     
-    if [[ "$local_version" == "$remote_version" ]]; then
+    # 只提取主版本号数字部分进行比较，忽略beta等后缀
+    local local_major=$(echo "$local_version" | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+')
+    local remote_major=$(echo "$remote_version" | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+')
+    
+    if [[ "$local_major" == "$remote_major" ]]; then
         echo -e "${GREEN}已是最新版本${RESET}"
         return 2
     else
