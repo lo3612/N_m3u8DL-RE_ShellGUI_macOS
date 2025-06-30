@@ -44,17 +44,13 @@ init() {
 
 # 显示主菜单
 show_main_menu() {
-    clear
     show_title "N_m3u8DL-RE 下载管理器"
     
-    echo -e "${WHITE}┌─────────────────────────────────────────────────────────────┐${RESET}"
-    echo -e "${WHITE}│                    功能菜单                                │${RESET}"
-    echo -e "${WHITE}├─────────────────────────────────────────────────────────────┤${RESET}"
-    echo -e "${WHITE}│  ${CYAN}1.${RESET} 单个视频下载    ${CYAN}2.${RESET} 批量下载    ${CYAN}3.${RESET} 直播录制    │${RESET}"
-    echo -e "${WHITE}│  ${CYAN}4.${RESET} 高级功能        ${CYAN}5.${RESET} 设置        ${CYAN}6.${RESET} 自动更新    │${RESET}"
-    echo -e "${WHITE}│  ${CYAN}0.${RESET} 退出程序                                                      │${RESET}"
-    echo -e "${WHITE}└─────────────────────────────────────────────────────────────┘${RESET}"
-    echo ""
+    show_adaptive_menu "功能菜单"
+    show_adaptive_menu_items "1. 单个视频下载" "2. 批量下载" "3. 直播录制"
+    show_adaptive_menu_items "4. 高级功能" "5. 设置" "6. 自动更新"
+    show_adaptive_menu_items "0. 退出程序"
+    show_adaptive_menu_bottom
 }
 
 # 单个视频下载
