@@ -382,7 +382,7 @@ get_adaptive_width() {
     local cols=$(get_terminal_size | cut -d' ' -f1)
     local min_width=60
     local max_width=120
-    local width=$((cols - 4))  # 留出边距
+    local width=$((cols - 2))  # 只留2个字符的边距
     
     if [[ $width -lt $min_width ]]; then
         width=$min_width
@@ -407,9 +407,9 @@ show_adaptive_title() {
     local title_width=${#title}
     local padding=$(((width - title_width - 2) / 2))
     
-    echo -e "${CYAN}${BOLD}$(generate_border $width '═')${RESET}"
-    printf "${CYAN}${BOLD}%*s%s%*s${RESET}\n" $padding "" "$title" $padding ""
-    echo -e "${CYAN}${BOLD}$(generate_border $width '═')${RESET}"
+    echo -e "${CYAN}${BOLD}╔$(generate_border $((width-2)) '═')╗${RESET}"
+    printf "${CYAN}${BOLD}║%*s%s%*s║${RESET}\n" $padding "" "$title" $padding ""
+    echo -e "${CYAN}${BOLD}╚$(generate_border $((width-2)) '═')╝${RESET}"
     echo ""
 }
 
@@ -429,42 +429,36 @@ show_adaptive_menu() {
 show_adaptive_menu_items() {
     local items=("$@")
     local width=$(get_adaptive_width)
-    local cols=3  # 默认3列
-    local item_width=$((width / cols - 2))
-    
-    # 如果宽度不够，减少列数
-    if [[ $item_width -lt 15 ]]; then
-        cols=2
-        item_width=$((width / cols - 2))
-    fi
-    if [[ $item_width -lt 15 ]]; then
-        cols=1
-        item_width=$((width - 4))
-    fi
-    
-    local row=0
-    local col=0
-    
-    for i in "${!items[@]}"; do
-        if [[ $col -eq 0 ]]; then
-            printf "${WHITE}│${RESET}"
+    local min_col_width=16
+    local max_cols=4
+    local cols=1
+    local n=${#items[@]}
+
+    # 动态计算最大可用列数
+    for try_cols in $(seq $max_cols -1 1); do
+        if (( width / try_cols >= min_col_width )); then
+            cols=$try_cols
+            break
         fi
-        
-        local item="${items[i]}"
-        local display_item=$(printf "%-${item_width}s" "$item")
-        printf " %s" "$display_item"
-        
-        col=$((col + 1))
-        if [[ $col -eq $cols ]] || [[ $i -eq $((${#items[@]} - 1)) ]]; then
-            # 填充剩余空间
-            local remaining=$((cols - col))
-            if [[ $remaining -gt 0 ]]; then
-                printf "%$((remaining * (item_width + 1)))s"
+    done
+    local col_width=$((width / cols))
+    local rows=$(( (n + cols - 1) / cols ))
+
+    for ((r=0; r<rows; r++)); do
+        printf "${WHITE}│${RESET}"
+        for ((c=0; c<cols; c++)); do
+            idx=$((c*rows + r))
+            if (( idx < n )); then
+                local item="${items[idx]}"
+                local pad=$((col_width - ${#item}))
+                local left=$((pad/2))
+                local right=$((pad-left))
+                printf "%*s%s%*s" $left "" "$item" $right ""
+            else
+                printf "%*s" $col_width ""
             fi
-            printf " │${RESET}\n"
-            col=0
-            row=$((row + 1))
-        fi
+        done
+        printf " │${RESET}\n"
     done
 }
 
@@ -485,7 +479,6 @@ show_title() {
     echo -e "${CYAN}${BOLD}╔$(generate_border $((width-2)) '═')╗${RESET}"
     printf "${CYAN}${BOLD}║%*s%s%*s║${RESET}\n" $padding "" "$title" $padding ""
     echo -e "${CYAN}${BOLD}╚$(generate_border $((width-2)) '═')╝${RESET}"
-    echo ""
 }
 
 # 显示进度条
@@ -536,7 +529,7 @@ show_selection_menu() {
     shift
     local options=("$@")
     
-    show_title "$title"
+    # 不重复显示标题，因为调用方已经显示
     for i in "${!options[@]}"; do
         echo -e "${WHITE}$((i+1)). ${options[i]}${RESET}"
     done
@@ -551,17 +544,12 @@ get_user_choice() {
     
     while true; do
         read -p "请选择 (0-$max): " choice
-        # 检查是否为空
-        if [[ -z "$choice" ]]; then
-            echo -e "${RED}请输入有效选择${RESET}"
-            continue
-        fi
-        # 检查是否为数字且在有效范围内
-        if [[ "$choice" =~ ^[0-9]+$ ]] && [[ "$choice" -ge 0 ]] && [[ "$choice" -le "$max" ]]; then
+        # 严格检查：只允许数字且在范围内
+        if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 0 && choice <= max )); then
             echo "$choice"
             return 0
-        else
-            echo -e "${RED}无效选择，请输入 0-$max${RESET}"
         fi
+        # 静默处理无效输入，不显示任何错误信息
+        :
     done
 } 
