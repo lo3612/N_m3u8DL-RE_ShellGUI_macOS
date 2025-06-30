@@ -121,6 +121,21 @@ download_n_m3u8dl_re() {
     
     echo -e "${GREEN}找到最新版本: $version${RESET}"
     
+    # 检查本地版本（如果存在）
+    if [[ -f "$SCRIPT_DIR/N_m3u8DL-RE" ]]; then
+        local local_version=$("$SCRIPT_DIR/N_m3u8DL-RE" --version 2>/dev/null | head -1)
+        echo -e "${BLUE}本地版本: ${local_version}${RESET}"
+        
+        # 提取版本号进行比较（只比较主版本号）
+        local local_ver_num=$(echo "$local_version" | grep -o '^[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1)
+        local remote_ver_num=$(echo "$version" | sed 's/^v//' | sed 's/-.*$//')
+        
+        if [[ "$local_ver_num" == "$remote_ver_num" ]]; then
+            echo -e "${GREEN}N_m3u8DL-RE 已是最新版本，无需下载${RESET}"
+            return 0
+        fi
+    fi
+    
     local temp_dir="$SCRIPT_DIR/temp"
     mkdir -p "$temp_dir"
     cd "$temp_dir"
@@ -193,6 +208,12 @@ download_ffmpeg() {
         # 获取本地版本
         local local_version=$("$SCRIPT_DIR/ffmpeg" -version | head -1)
         echo -e "${BLUE}本地版本: ${local_version}${RESET}"
+        
+        # 在安装模式下也检查版本
+        if [[ "$mode" == "install" ]]; then
+            echo -e "${GREEN}ffmpeg 已存在，跳过下载${RESET}"
+            return 0
+        fi
     fi
     
     # 下载并检查版本
