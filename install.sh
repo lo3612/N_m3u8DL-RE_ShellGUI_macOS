@@ -1,55 +1,45 @@
 #!/bin/bash
 
-# 一键安装脚本
+# N_m3u8DL-RE 一键安装脚本
+# 版本: 2.1.0
+# 日期: 2025-6-30
 
 # 引入公共函数库
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
-echo -e "${CYAN}${BOLD}========================================${RESET}"
-echo -e "${CYAN}${BOLD}    N_m3u8DL-RE 一键安装${RESET}"
-echo -e "${CYAN}${BOLD}========================================${RESET}"
+echo "========================================"
+echo "    N_m3u8DL-RE 一键安装"
+echo "========================================"
 echo ""
 
-# 切换到脚本目录
-cd "$SCRIPT_DIR"
+echo "开始安装N_m3u8DL-RE..."
 
-# 主安装流程
-main() {
-    echo -e "${BLUE}开始安装N_m3u8DL-RE...${RESET}"
-    
-    # 安装N_m3u8DL-RE
-    if ! download_n_m3u8dl_re "install" "false"; then
-        echo -e "${RED}N_m3u8DL-RE 安装失败${RESET}"
-        exit 1
-    fi
-    
-    # 安装ffmpeg
-    if ! download_ffmpeg "install" "false"; then
-        echo -e "${RED}ffmpeg 安装失败${RESET}"
-        exit 1
-    fi
-    
-    # 设置脚本权限
-    set_permissions
-    
-    # 自动赋予执行权限
-    auto_set_exec_permissions
-    
-    echo -e "${GREEN}${BOLD}安装完成!${RESET}"
+# 下载N_m3u8DL-RE
+if ! download_n_m3u8dl_re "install" "false"; then
+    echo -e "${RED}N_m3u8DL-RE 安装失败${RESET}"
+    exit 1
+fi
+
+# 下载ffmpeg
+if ! download_ffmpeg "install" "false"; then
+    echo -e "${RED}ffmpeg 安装失败${RESET}"
+    exit 1
+fi
+
+# 设置权限
+set_permissions
+auto_set_exec_permissions
+
+echo -e "${GREEN}安装完成!${RESET}"
+echo ""
+
+# 询问是否启动程序
+read -p "是否立即启动程序? (y/n): " start_program
+if [[ "$start_program" == "y" || "$start_program" == "Y" ]]; then
     echo ""
-    
-    # 询问是否立即启动
-    echo -e "${CYAN}是否立即启动程序? (y/n)${RESET}"
-    read -r response
-    if [[ "$response" =~ ^[Yy]$ ]]; then
-        echo ""
-        echo -e "${BLUE}启动 N_m3u8DL-RE...${RESET}"
-        echo ""
-        ./m3u8DL_enhanced.sh
-    else
-        echo -e "${CYAN}您可以稍后运行 ./start.sh 启动程序${RESET}"
-    fi
-}
-
-# 运行主函数
-main "$@" 
+    echo "启动 N_m3u8DL-RE..."
+    echo ""
+    ./m3u8DL_enhanced.sh
+else
+    echo "您可以稍后运行 ./start.sh 启动程序"
+fi 
