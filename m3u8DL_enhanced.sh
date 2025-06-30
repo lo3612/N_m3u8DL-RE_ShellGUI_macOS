@@ -9,24 +9,15 @@
 # 引入公共函数库
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
-# 颜色代码定义
-readonly RED='\033[0;31m'
-readonly GREEN='\033[0;32m'
-readonly YELLOW='\033[0;33m'
-readonly BLUE='\033[0;34m'
-readonly PURPLE='\033[0;35m'
-readonly CYAN='\033[0;36m'
-readonly WHITE='\033[0;37m'
-readonly BOLD='\033[1m'
-readonly RESET='\033[0m'
+# 程序路径
+REfile="$SCRIPT_DIR/N_m3u8DL-RE"
+ffmpeg="$SCRIPT_DIR/ffmpeg"
 
 # 全局变量
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="$SCRIPT_DIR/config.conf"
 LOG_FILE="$SCRIPT_DIR/m3u8dl.log"
 LOCK_FILE="$SCRIPT_DIR/m3u8dl.lock"
-REfile="$SCRIPT_DIR/N_m3u8DL-RE"
-ffmpeg="$SCRIPT_DIR/ffmpeg"
 
 # 默认配置
 ThreadCount=32
