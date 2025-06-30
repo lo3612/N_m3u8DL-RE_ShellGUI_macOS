@@ -1,12 +1,13 @@
 #!/bin/bash
 
-# 公共函数库 - 被 install.sh 和 auto_update.sh 引用
+# 公共函数库 - 被所有脚本引用
 
 # 颜色代码
 readonly RED='\033[0;31m'
 readonly GREEN='\033[0;32m'
 readonly YELLOW='\033[0;33m'
 readonly BLUE='\033[0;34m'
+readonly PURPLE='\033[0;35m'
 readonly CYAN='\033[0;36m'
 readonly WHITE='\033[0;37m'
 readonly BOLD='\033[1m'
@@ -14,6 +15,27 @@ readonly RESET='\033[0m'
 
 # 获取脚本目录
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# 配置文件路径
+CONFIG_FILE="$SCRIPT_DIR/config.conf"
+LOG_FILE="$SCRIPT_DIR/m3u8dl.log"
+LOCK_FILE="$SCRIPT_DIR/m3u8dl.lock"
+
+# 默认配置
+ThreadCount=32
+RetryCount=3
+Timeout=10
+SaveDir="$SCRIPT_DIR/downloads"
+TempDir="$SCRIPT_DIR/temp"
+Language="zh-CN"
+LogLevel="INFO"
+AutoSelect="true"
+ConcurrentDownload="true"
+RealTimeDecryption="true"
+CheckSegments="true"
+DeleteAfterDone="false"
+WriteMetaJson="true"
+AppendUrlParams="true"
 
 # 检查系统架构
 get_system_arch() {
@@ -55,7 +77,6 @@ get_remote_version() {
     fi
     
     local version=$(echo "$response" | grep -o '"tag_name": "[^"]*"' | cut -d'"' -f4)
-    # 移除v前缀，只保留版本号部分
     version=$(echo "$version" | sed 's/^v//')
     echo "$version"
 }
@@ -257,4 +278,153 @@ auto_set_exec_permissions() {
         echo -e "\033[0;32m已为 ffmpeg 添加执行权限\033[0m"
     fi
     echo -e "\033[0;36m安装完成！如遇无法执行请手动运行：chmod +x N_m3u8DL-RE ffmpeg\033[0m"
+}
+
+# 加载配置
+load_config() {
+    if [[ -f "$CONFIG_FILE" ]]; then
+        source "$CONFIG_FILE"
+    else
+        save_config
+    fi
+}
+
+# 保存配置
+save_config() {
+    cat > "$CONFIG_FILE" << EOF
+# 配置文件
+ThreadCount=$ThreadCount
+RetryCount=$RetryCount
+Timeout=$Timeout
+SaveDir="$SaveDir"
+TempDir="$TempDir"
+Language=$Language
+LogLevel=$LogLevel
+AutoSelect=$AutoSelect
+ConcurrentDownload=$ConcurrentDownload
+RealTimeDecryption=$RealTimeDecryption
+CheckSegments=$CheckSegments
+DeleteAfterDone=$DeleteAfterDone
+WriteMetaJson=$WriteMetaJson
+AppendUrlParams=$AppendUrlParams
+EOF
+}
+
+# 日志函数
+log() {
+    local level="$1"
+    local message="$2"
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "[$timestamp] [$level] $message" >> "$LOG_FILE"
+    
+    case "$level" in
+        "ERROR") echo -e "${RED}[ERROR] $message${RESET}" ;;
+        "WARN")  echo -e "${YELLOW}[WARN] $message${RESET}" ;;
+        "INFO")  echo -e "${BLUE}[INFO] $message${RESET}" ;;
+    esac
+}
+
+# 检查程序
+check_programs() {
+    if [[ ! -f "$SCRIPT_DIR/N_m3u8DL-RE" ]]; then
+        echo -e "${RED}错误: N_m3u8DL-RE 程序不存在${RESET}"
+        echo -e "${YELLOW}请运行 ./install.sh 安装程序${RESET}"
+        exit 1
+    fi
+    
+    if [[ ! -f "$SCRIPT_DIR/ffmpeg" ]]; then
+        echo -e "${RED}错误: ffmpeg 程序不存在${RESET}"
+        echo -e "${YELLOW}请运行 ./install.sh 安装程序${RESET}"
+        exit 1
+    fi
+    
+    chmod +x "$SCRIPT_DIR/N_m3u8DL-RE" 2>/dev/null
+    chmod +x "$SCRIPT_DIR/ffmpeg" 2>/dev/null
+}
+
+# 创建目录
+create_directories() {
+    mkdir -p "$SaveDir"
+    mkdir -p "$TempDir"
+    mkdir -p "$(dirname "$LOG_FILE")"
+}
+
+# 显示美化标题
+show_title() {
+    local title="$1"
+    echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════════════════════════╗${RESET}"
+    echo -e "${CYAN}${BOLD}║                    $title${RESET}"
+    echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════════════════════════╝${RESET}"
+    echo ""
+}
+
+# 显示进度条
+show_progress() {
+    local current="$1"
+    local total="$2"
+    local width=50
+    local percentage=$((current * 100 / total))
+    local filled=$((width * current / total))
+    local empty=$((width - filled))
+    
+    printf "\r["
+    printf "%${filled}s" | tr ' ' '█'
+    printf "%${empty}s" | tr ' ' '░'
+    printf "] %d%%" "$percentage"
+    
+    if [[ "$current" -eq "$total" ]]; then
+        echo ""
+    fi
+}
+
+# 显示确认对话框
+confirm_action() {
+    local message="$1"
+    echo -e "${YELLOW}$message${RESET}"
+    read -p "确认操作? (y/N): " confirm
+    [[ "$confirm" == "y" || "$confirm" == "Y" ]]
+}
+
+# 显示输入框
+input_box() {
+    local prompt="$1"
+    local default="$2"
+    local input
+    
+    if [[ -n "$default" ]]; then
+        read -p "$prompt [$default]: " input
+        echo "${input:-$default}"
+    else
+        read -p "$prompt: " input
+        echo "$input"
+    fi
+}
+
+# 显示选择菜单
+show_selection_menu() {
+    local title="$1"
+    shift
+    local options=("$@")
+    
+    show_title "$title"
+    for i in "${!options[@]}"; do
+        echo -e "${WHITE}$((i+1)). ${options[i]}${RESET}"
+    done
+    echo -e "${WHITE}0. 返回${RESET}"
+    echo ""
+}
+
+# 获取用户选择
+get_user_choice() {
+    local max="$1"
+    local choice
+    
+    while true; do
+        read -p "请选择 (0-$max): " choice
+        if [[ "$choice" =~ ^[0-9]+$ ]] && [[ "$choice" -ge 0 ]] && [[ "$choice" -le "$max" ]]; then
+            echo "$choice"
+            return
+        fi
+        echo -e "${RED}无效选择，请输入 0-$max${RESET}"
+    done
 } 
