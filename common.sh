@@ -370,12 +370,121 @@ create_directories() {
     mkdir -p "$(dirname "$LOG_FILE")"
 }
 
+# 获取终端尺寸
+get_terminal_size() {
+    local cols=$(tput cols 2>/dev/null || echo 80)
+    local lines=$(tput lines 2>/dev/null || echo 24)
+    echo "$cols $lines"
+}
+
+# 计算自适应宽度
+get_adaptive_width() {
+    local cols=$(get_terminal_size | cut -d' ' -f1)
+    local min_width=60
+    local max_width=120
+    local width=$((cols - 4))  # 留出边距
+    
+    if [[ $width -lt $min_width ]]; then
+        width=$min_width
+    elif [[ $width -gt $max_width ]]; then
+        width=$max_width
+    fi
+    
+    echo "$width"
+}
+
+# 生成自适应边框
+generate_border() {
+    local width="$1"
+    local char="$2"
+    printf "%${width}s" | tr ' ' "$char"
+}
+
+# 自适应显示标题
+show_adaptive_title() {
+    local title="$1"
+    local width=$(get_adaptive_width)
+    local title_width=${#title}
+    local padding=$(((width - title_width - 2) / 2))
+    
+    echo -e "${CYAN}${BOLD}$(generate_border $width '═')${RESET}"
+    printf "${CYAN}${BOLD}%*s%s%*s${RESET}\n" $padding "" "$title" $padding ""
+    echo -e "${CYAN}${BOLD}$(generate_border $width '═')${RESET}"
+    echo ""
+}
+
+# 自适应显示菜单框
+show_adaptive_menu() {
+    local title="$1"
+    local width=$(get_adaptive_width)
+    local title_width=${#title}
+    local padding=$(((width - title_width - 2) / 2))
+    
+    echo -e "${WHITE}┌$(generate_border $((width-2)) '─')┐${RESET}"
+    printf "${WHITE}│%*s%s%*s│${RESET}\n" $padding "" "$title" $padding ""
+    echo -e "${WHITE}├$(generate_border $((width-2)) '─')┤${RESET}"
+}
+
+# 自适应显示多列菜单项
+show_adaptive_menu_items() {
+    local items=("$@")
+    local width=$(get_adaptive_width)
+    local cols=3  # 默认3列
+    local item_width=$((width / cols - 2))
+    
+    # 如果宽度不够，减少列数
+    if [[ $item_width -lt 15 ]]; then
+        cols=2
+        item_width=$((width / cols - 2))
+    fi
+    if [[ $item_width -lt 15 ]]; then
+        cols=1
+        item_width=$((width - 4))
+    fi
+    
+    local row=0
+    local col=0
+    
+    for i in "${!items[@]}"; do
+        if [[ $col -eq 0 ]]; then
+            printf "${WHITE}│${RESET}"
+        fi
+        
+        local item="${items[i]}"
+        local display_item=$(printf "%-${item_width}s" "$item")
+        printf " %s" "$display_item"
+        
+        col=$((col + 1))
+        if [[ $col -eq $cols ]] || [[ $i -eq $((${#items[@]} - 1)) ]]; then
+            # 填充剩余空间
+            local remaining=$((cols - col))
+            if [[ $remaining -gt 0 ]]; then
+                printf "%$((remaining * (item_width + 1)))s"
+            fi
+            printf " │${RESET}\n"
+            col=0
+            row=$((row + 1))
+        fi
+    done
+}
+
+# 自适应显示菜单底部
+show_adaptive_menu_bottom() {
+    local width=$(get_adaptive_width)
+    echo -e "${WHITE}└$(generate_border $((width-2)) '─')┘${RESET}"
+    echo ""
+}
+
 # 显示美化标题
 show_title() {
     local title="$1"
-    echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════════════════════════╗${RESET}"
-    echo -e "${CYAN}${BOLD}║                    $title${RESET}"
-    echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════════════════════════╝${RESET}"
+    local width=$(get_adaptive_width)
+    local title_width=${#title}
+    local padding=$(((width - title_width - 2) / 2))
+    
+    echo -e "${CYAN}${BOLD}╔$(generate_border $((width-2)) '═')╗${RESET}"
+    printf "${CYAN}${BOLD}║%*s%s%*s║${RESET}\n" $padding "" "$title" $padding ""
+    echo -e "${CYAN}${BOLD}╚$(generate_border $((width-2)) '═')╝${RESET}"
     echo ""
 }
 
