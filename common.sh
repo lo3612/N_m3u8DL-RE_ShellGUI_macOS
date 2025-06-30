@@ -421,10 +421,17 @@ get_user_choice() {
     
     while true; do
         read -p "请选择 (0-$max): " choice
+        # 检查是否为空
+        if [[ -z "$choice" ]]; then
+            echo -e "${RED}请输入有效选择${RESET}"
+            continue
+        fi
+        # 检查是否为数字且在有效范围内
         if [[ "$choice" =~ ^[0-9]+$ ]] && [[ "$choice" -ge 0 ]] && [[ "$choice" -le "$max" ]]; then
             echo "$choice"
-            return
+            return 0
+        else
+            echo -e "${RED}无效选择，请输入 0-$max${RESET}"
         fi
-        echo -e "${RED}无效选择，请输入 0-$max${RESET}"
     done
 } 
