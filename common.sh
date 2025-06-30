@@ -400,85 +400,41 @@ generate_border() {
     printf "%${width}s" | tr ' ' "$char"
 }
 
-# 自适应显示标题
-show_adaptive_title() {
-    local title="$1"
-    local width=$(get_adaptive_width)
-    local title_width=${#title}
-    local padding=$(((width - title_width - 2) / 2))
-    
-    echo -e "${CYAN}${BOLD}╔$(generate_border $((width-2)) '═')╗${RESET}"
-    printf "${CYAN}${BOLD}║%*s%s%*s║${RESET}\n" $padding "" "$title" $padding ""
-    echo -e "${CYAN}${BOLD}╚$(generate_border $((width-2)) '═')╝${RESET}"
-    echo ""
-}
-
-# 自适应显示菜单框
-show_adaptive_menu() {
-    local title="$1"
-    local width=$(get_adaptive_width)
-    local title_width=${#title}
-    local padding=$(((width - title_width - 2) / 2))
-    
-    echo -e "${WHITE}┌$(generate_border $((width-2)) '─')┐${RESET}"
-    printf "${WHITE}│%*s%s%*s│${RESET}\n" $padding "" "$title" $padding ""
-    echo -e "${WHITE}├$(generate_border $((width-2)) '─')┤${RESET}"
-}
-
-# 自适应显示多列菜单项
-show_adaptive_menu_items() {
-    local items=("$@")
-    local width=$(get_adaptive_width)
-    local min_col_width=16
-    local max_cols=4
-    local cols=1
-    local n=${#items[@]}
-
-    # 动态计算最大可用列数
-    for try_cols in $(seq $max_cols -1 1); do
-        if (( width / try_cols >= min_col_width )); then
-            cols=$try_cols
-            break
-        fi
-    done
-    local col_width=$((width / cols))
-    local rows=$(( (n + cols - 1) / cols ))
-
-    for ((r=0; r<rows; r++)); do
-        printf "${WHITE}│${RESET}"
-        for ((c=0; c<cols; c++)); do
-            idx=$((c*rows + r))
-            if (( idx < n )); then
-                local item="${items[idx]}"
-                local pad=$((col_width - ${#item}))
-                local left=$((pad/2))
-                local right=$((pad-left))
-                printf "%*s%s%*s" $left "" "$item" $right ""
-            else
-                printf "%*s" $col_width ""
-            fi
-        done
-        printf " │${RESET}\n"
-    done
-}
-
-# 自适应显示菜单底部
-show_adaptive_menu_bottom() {
-    local width=$(get_adaptive_width)
-    echo -e "${WHITE}└$(generate_border $((width-2)) '─')┘${RESET}"
-    echo ""
-}
-
-# 显示美化标题
+# 显示简洁标题
 show_title() {
     local title="$1"
-    local width=$(get_adaptive_width)
-    local title_width=${#title}
-    local padding=$(((width - title_width - 2) / 2))
+    echo -e "${CYAN}${BOLD}========================================${RESET}"
+    echo -e "${CYAN}${BOLD}  $title${RESET}"
+    echo -e "${CYAN}${BOLD}========================================${RESET}"
+    echo ""
+}
+
+# 显示简洁菜单
+show_menu() {
+    local title="$1"
+    shift
+    local options=("$@")
     
-    echo -e "${CYAN}${BOLD}╔$(generate_border $((width-2)) '═')╗${RESET}"
-    printf "${CYAN}${BOLD}║%*s%s%*s║${RESET}\n" $padding "" "$title" $padding ""
-    echo -e "${CYAN}${BOLD}╚$(generate_border $((width-2)) '═')╝${RESET}"
+    show_title "$title"
+    for i in "${!options[@]}"; do
+        echo -e "${WHITE}$((i+1)). ${options[i]}${RESET}"
+    done
+    echo -e "${WHITE}0. 返回${RESET}"
+    echo ""
+}
+
+# 显示选择菜单
+show_selection_menu() {
+    local title="$1"
+    shift
+    local options=("$@")
+    
+    show_title "$title"
+    for i in "${!options[@]}"; do
+        echo -e "${WHITE}$((i+1)). ${options[i]}${RESET}"
+    done
+    echo -e "${WHITE}0. 返回${RESET}"
+    echo ""
 }
 
 # 显示进度条
@@ -521,20 +477,6 @@ input_box() {
         read -p "$prompt: " input
         echo "$input"
     fi
-}
-
-# 显示选择菜单
-show_selection_menu() {
-    local title="$1"
-    shift
-    local options=("$@")
-    
-    # 不重复显示标题，因为调用方已经显示
-    for i in "${!options[@]}"; do
-        echo -e "${WHITE}$((i+1)). ${options[i]}${RESET}"
-    done
-    echo -e "${WHITE}0. 返回${RESET}"
-    echo ""
 }
 
 # 获取用户选择
