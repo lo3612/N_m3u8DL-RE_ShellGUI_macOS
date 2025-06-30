@@ -44,13 +44,19 @@ init() {
 
 # 显示主菜单
 show_main_menu() {
-    show_title "N_m3u8DL-RE 下载管理器"
-    
-    show_adaptive_menu "功能菜单"
-    show_adaptive_menu_items "1. 单个视频下载" "2. 批量下载" "3. 直播录制"
-    show_adaptive_menu_items "4. 高级功能" "5. 设置" "6. 自动更新"
-    show_adaptive_menu_items "0. 退出程序"
-    show_adaptive_menu_bottom
+    clear
+    echo -e "${CYAN}${BOLD}========================================${RESET}"
+    echo -e "${CYAN}${BOLD}  N_m3u8DL-RE 下载管理器${RESET}"
+    echo -e "${CYAN}${BOLD}========================================${RESET}"
+    echo ""
+    echo -e "${WHITE}1. 单个视频下载${RESET}"
+    echo -e "${WHITE}2. 批量下载${RESET}"
+    echo -e "${WHITE}3. 直播录制${RESET}"
+    echo -e "${WHITE}4. 高级功能${RESET}"
+    echo -e "${WHITE}5. 设置${RESET}"
+    echo -e "${WHITE}6. 自动更新${RESET}"
+    echo -e "${WHITE}0. 退出程序${RESET}"
+    echo ""
 }
 
 # 单个视频下载
@@ -240,14 +246,22 @@ live_recording() {
 # 高级功能
 advanced_features() {
     while true; do
-        show_title "高级功能"
+        clear
+        echo -e "${CYAN}${BOLD}========================================${RESET}"
+        echo -e "${CYAN}${BOLD}  高级功能${RESET}"
+        echo -e "${CYAN}${BOLD}========================================${RESET}"
+        echo ""
+        echo -e "${WHITE}1. 查看下载历史${RESET}"
+        echo -e "${WHITE}2. 清理临时文件${RESET}"
+        echo -e "${WHITE}3. 查看日志${RESET}"
+        echo -e "${WHITE}4. 重置配置${RESET}"
+        echo -e "${WHITE}5. 系统信息${RESET}"
+        echo -e "${WHITE}0. 返回${RESET}"
+        echo ""
         
-        local options=("查看下载历史" "清理临时文件" "查看日志" "重置配置" "系统信息")
-        show_selection_menu "高级功能" "${options[@]}"
+        local choice=$(get_user_choice 5)
         
-        local choice=$(get_user_choice "${#options[@]}")
-        
-        case "$choice" in
+        case $choice in
             0) break ;;
             1) show_download_history ;;
             2) cleanup_temp_files ;;
@@ -257,7 +271,7 @@ advanced_features() {
             *) echo -e "${RED}无效选择，请输入 0-5${RESET}" ;;
         esac
         
-        if [[ "$choice" -ne 0 ]]; then
+        if (( choice != 0 )); then
             echo ""
             read -p "按回车键继续..."
         fi
@@ -346,14 +360,21 @@ show_system_info() {
 # 设置
 settings() {
     while true; do
-        show_title "设置"
+        clear
+        echo -e "${CYAN}${BOLD}========================================${RESET}"
+        echo -e "${CYAN}${BOLD}  设置${RESET}"
+        echo -e "${CYAN}${BOLD}========================================${RESET}"
+        echo ""
+        echo -e "${WHITE}1. 下载设置${RESET}"
+        echo -e "${WHITE}2. 性能设置${RESET}"
+        echo -e "${WHITE}3. 高级设置${RESET}"
+        echo -e "${WHITE}4. 保存设置${RESET}"
+        echo -e "${WHITE}0. 返回${RESET}"
+        echo ""
         
-        local options=("下载设置" "性能设置" "高级设置" "保存设置")
-        show_selection_menu "设置" "${options[@]}"
+        local choice=$(get_user_choice 4)
         
-        local choice=$(get_user_choice "${#options[@]}")
-        
-        case "$choice" in
+        case $choice in
             0) break ;;
             1) download_settings ;;
             2) performance_settings ;;
@@ -362,7 +383,7 @@ settings() {
             *) echo -e "${RED}无效选择，请输入 0-4${RESET}" ;;
         esac
         
-        if [[ "$choice" -ne 0 ]]; then
+        if (( choice != 0 )); then
             echo ""
             read -p "按回车键继续..."
         fi
@@ -453,11 +474,10 @@ main() {
     
     while true; do
         show_main_menu
-        
         local choice=$(get_user_choice 6)
         
-        case "$choice" in
-            0) 
+        case $choice in
+            0)
                 echo -e "${GREEN}感谢使用!${RESET}"
                 exit 0
                 ;;
@@ -470,7 +490,7 @@ main() {
             *) echo -e "${RED}无效选择，请输入 0-6${RESET}" ;;
         esac
         
-        if [[ "$choice" -ne 0 ]]; then
+        if (( choice != 0 )); then
             echo ""
             read -p "按回车键返回主菜单..."
         fi
