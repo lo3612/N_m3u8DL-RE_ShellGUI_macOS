@@ -258,6 +258,7 @@ advanced_features() {
             3) show_logs ;;
             4) reset_config ;;
             5) show_system_info ;;
+            *) echo -e "${RED}无效选择，请输入 0-5${RESET}" ;;
         esac
         
         if [[ "$choice" -ne 0 ]]; then
@@ -362,6 +363,7 @@ settings() {
             2) performance_settings ;;
             3) advanced_settings ;;
             4) save_settings ;;
+            *) echo -e "${RED}无效选择，请输入 0-4${RESET}" ;;
         esac
         
         if [[ "$choice" -ne 0 ]]; then
@@ -469,6 +471,7 @@ main() {
             4) advanced_features ;;
             5) settings ;;
             6) auto_update ;;
+            *) echo -e "${RED}无效选择，请输入 0-6${RESET}" ;;
         esac
         
         if [[ "$choice" -ne 0 ]]; then
