@@ -42,6 +42,32 @@ init() {
     create_directories
 }
 
+# 创建必要的目录
+create_directories() {
+    # 创建下载目录
+    if [[ ! -d "$SaveDir" ]]; then
+        mkdir -p "$SaveDir"
+        echo -e "${GREEN}创建下载目录: $SaveDir${RESET}"
+    fi
+    
+    # 创建临时目录
+    if [[ ! -d "$TempDir" ]]; then
+        mkdir -p "$TempDir"
+        echo -e "${GREEN}创建临时目录: $TempDir${RESET}"
+    fi
+    
+    # 确保目录有写入权限
+    if [[ ! -w "$SaveDir" ]]; then
+        chmod 755 "$SaveDir"
+        echo -e "${GREEN}设置下载目录权限: $SaveDir${RESET}"
+    fi
+    
+    if [[ ! -w "$TempDir" ]]; then
+        chmod 755 "$TempDir"
+        echo -e "${GREEN}设置临时目录权限: $TempDir${RESET}"
+    fi
+}
+
 # 显示主菜单
 show_main_menu() {
     clear
@@ -71,6 +97,9 @@ single_download() {
     
     local filename=$(input_box "请输入保存文件名" "video_$(date +%Y%m%d_%H%M%S)")
     
+    # 确保目录存在
+    create_directories
+    
     # 构建命令
     local cmd="$REfile \"$link\" --save-name \"$filename\""
     cmd+=" --thread-count $ThreadCount"
@@ -98,6 +127,7 @@ single_download() {
     
     if confirm_action "确认开始下载?"; then
         log "INFO" "开始下载: $link"
+        # 使用更详细的输出模式来帮助诊断问题
         eval "$cmd"
         local exit_code=$?
         
@@ -107,6 +137,12 @@ single_download() {
         else
             echo -e "${RED}下载失败!${RESET}"
             log "ERROR" "下载失败，退出码: $exit_code"
+            # 提供更多错误信息帮助用户诊断问题
+            echo -e "${YELLOW}可能的解决方案:${RESET}"
+            echo -e "${YELLOW}1. 检查网络连接是否正常${RESET}"
+            echo -e "${YELLOW}2. 确认链接是否有效${RESET}"
+            echo -e "${YELLOW}3. 检查防火墙或代理设置${RESET}"
+            echo -e "${YELLOW}4. 尝试降低线程数(在设置中修改)${RESET}"
         fi
     fi
 }
@@ -138,13 +174,26 @@ batch_download() {
     local current=0
     
     while IFS= read -r link; do
+        # 解析带名称格式的链接
+        local actual_link="$link"
+        local custom_name=""
+        if [[ "$link" == *'$'* ]]; then
+            custom_name="${link%%$*}"
+            actual_link="${link#*$}"
+        fi
+        
         current=$((current + 1))
         echo ""
         echo -e "${CYAN}处理第 $current/$line_count 个链接${RESET}"
-        echo -e "${BLUE}链接: $link${RESET}"
+        echo -e "${BLUE}链接: $actual_link${RESET}"
         
         local filename="batch_$(date +%Y%m%d_%H%M%S)_$current"
-        local cmd="$REfile \"$link\" --save-name \"$filename\""
+        # 如果有自定义名称，则使用自定义名称
+        if [[ -n "$custom_name" ]]; then
+            filename="$custom_name"
+        fi
+        
+        local cmd="$REfile \"$actual_link\" --save-name \"$filename\""
         cmd+=" --thread-count $ThreadCount"
         cmd+=" --download-retry-count $RetryCount"
         cmd+=" --http-request-timeout $Timeout"
@@ -163,8 +212,9 @@ batch_download() {
         [[ "$WriteMetaJson" == "true" ]] && cmd+=" --write-meta-json"
         [[ "$AppendUrlParams" == "true" ]] && cmd+=" --append-url-params"
         
-        log "INFO" "批量下载: $link"
-        eval "$cmd"
+        log "INFO" "批量下载: $actual_link"
+        # 添加调试信息
+        eval "$cmd --debug"
         
         if [[ $? -eq 0 ]]; then
             echo -e "${GREEN}✓ 下载成功${RESET}"
@@ -173,7 +223,13 @@ batch_download() {
         else
             echo -e "${RED}✗ 下载失败${RESET}"
             fail_count=$((fail_count + 1))
-            log "ERROR" "批量下载失败: $link"
+            log "ERROR" "批量下载失败: $actual_link"
+            # 提供错误诊断信息
+            echo -e "${YELLOW}可能的解决方案:${RESET}"
+            echo -e "${YELLOW}1. 检查网络连接是否正常${RESET}"
+            echo -e "${YELLOW}2. 确认链接是否有效${RESET}"
+            echo -e "${YELLOW}3. 检查防火墙或代理设置${RESET}"
+            echo -e "${YELLOW}4. 尝试降低线程数(在设置中修改)${RESET}"
         fi
         
         show_progress "$current" "$line_count"
@@ -499,3 +555,7 @@ main() {
 
 # 运行主函数
 main "$@" 
+
+
+
+
