@@ -49,13 +49,31 @@ get_system_arch() {
 
 # 检查网络连接
 check_network() {
-    echo -e "${BLUE}检查网络连接...${RESET}"
-    if ! ping -c 1 8.8.8.8 >/dev/null 2>&1; then
-        echo -e "${RED}网络连接失败${RESET}"
-        return 1
+    echo -e "${BLUE}正在检查网络连接...${RESET}"
+    
+    # 尝试使用curl检查网络连接
+    if command -v curl >/dev/null 2>&1; then
+        if curl -s --head https://github.com > /dev/null; then
+            echo -e "${GREEN}网络连接正常${RESET}"
+            log "INFO" "网络连接检查成功"
+            return 0
+        else
+            echo -e "${RED}网络连接失败${RESET}"
+            log "ERROR" "网络连接检查失败"
+            return 1
+        fi
+    else
+        # 如果没有安装curl，使用ping检查
+        if ping -c 1 8.8.8.8 >/dev/null 2>&1; then
+            echo -e "${GREEN}网络连接正常${RESET}"
+            log "INFO" "网络连接检查成功"
+            return 0
+        else
+            echo -e "${RED}网络连接失败${RESET}"
+            log "ERROR" "网络连接检查失败"
+            return 1
+        fi
     fi
-    echo -e "${GREEN}网络连接正常${RESET}"
-    return 0
 }
 
 # 获取本地版本
@@ -87,16 +105,23 @@ download_n_m3u8dl_re() {
     local backup_old="$2"  # 是否备份旧版本
     
     echo -e "${BLUE}开始下载N_m3u8DL-RE...${RESET}"
+    log "INFO" "开始下载N_m3u8DL-RE ($mode 模式)"
     
     if ! check_network; then
+        echo -e "${RED}网络检查失败，下载中止${RESET}"
+        log "ERROR" "网络检查失败，下载中止"
         return 1
     fi
     
     local arch=$(get_system_arch)
     if [[ "$arch" == "unknown" ]]; then
         echo -e "${RED}不支持的架构${RESET}"
+        log "ERROR" "不支持的架构: $arch"
         return 1
     fi
+    
+    echo -e "${BLUE}系统架构: ${arch}${RESET}"
+    log "INFO" "检测到系统架构: $arch"
     
     echo -e "${BLUE}获取最新版本信息...${RESET}"
     local response=$(curl -s "https://api.github.com/repos/nilaoda/N_m3u8DL-RE/releases/latest")
@@ -190,28 +215,38 @@ download_ffmpeg() {
     local backup_old="$2"  # 是否备份旧版本
     
     echo -e "${BLUE}开始检查ffmpeg...${RESET}"
+    log "INFO" "开始检查ffmpeg ($mode 模式)"
     
     if ! check_network; then
+        echo -e "${RED}网络检查失败，下载中止${RESET}"
+        log "ERROR" "网络检查失败，下载中止"
         return 1
     fi
     
     local arch=$(get_system_arch)
     if [[ "$arch" == "unknown" ]]; then
         echo -e "${RED}不支持的架构${RESET}"
+        log "ERROR" "不支持的架构: $arch"
         return 1
     fi
+    
+    echo -e "${BLUE}系统架构: ${arch}${RESET}"
+    log "INFO" "检测到系统架构: $arch"
     
     # 检查本地ffmpeg是否存在
     if [[ ! -f "$SCRIPT_DIR/ffmpeg" ]]; then
         echo -e "${BLUE}本地未找到ffmpeg，开始下载...${RESET}"
+        log "INFO" "未找到本地ffmpeg，准备下载"
     else
         # 获取本地版本
-        local local_version=$("$SCRIPT_DIR/ffmpeg" -version | head -1)
+        local local_version=$("$SCRIPT_DIR/ffmpeg" -version 2>/dev/null | head -1)
         echo -e "${BLUE}本地版本: ${local_version}${RESET}"
+        log "INFO" "本地ffmpeg版本: $local_version"
         
         # 在安装模式下也检查版本
         if [[ "$mode" == "install" ]]; then
             echo -e "${GREEN}ffmpeg 已存在，跳过下载${RESET}"
+            log "INFO" "ffmpeg 已存在，跳过下载"
             return 0
         fi
     fi
@@ -345,22 +380,60 @@ log() {
     esac
 }
 
-# 检查程序
+# 检查程序依赖
 check_programs() {
+    echo -e "${BLUE}正在检查程序依赖...${RESET}"
+    local error_occurred=0
+    
+    # 检查 N_m3u8DL-RE
     if [[ ! -f "$SCRIPT_DIR/N_m3u8DL-RE" ]]; then
-        echo -e "${RED}错误: N_m3u8DL-RE 程序不存在${RESET}"
+        echo -e "${RED}错误: 未找到 N_m3u8DL-RE 程序${RESET}"
         echo -e "${YELLOW}请运行 ./install.sh 安装程序${RESET}"
-        exit 1
+        log "ERROR" "未找到 N_m3u8DL-RE 程序"
+        error_occurred=1
+    elif [[ ! -x "$SCRIPT_DIR/N_m3u8DL-RE" ]]; then
+        echo -e "${YELLOW}设置 N_m3u8DL-RE 可执行权限...${RESET}"
+        if chmod +x "$SCRIPT_DIR/N_m3u8DL-RE"; then
+            echo -e "${GREEN}权限设置成功${RESET}"
+            log "INFO" "为 N_m3u8DL-RE 设置可执行权限"
+        else
+            echo -e "${RED}权限设置失败${RESET}"
+            log "ERROR" "无法为 N_m3u8DL-RE 设置可执行权限"
+        fi
+    else
+        echo -e "${GREEN}N_m3u8DL-RE 检查通过${RESET}"
+        log "INFO" "N_m3u8DL-RE 检查通过"
     fi
     
+    # 检查 ffmpeg
     if [[ ! -f "$SCRIPT_DIR/ffmpeg" ]]; then
-        echo -e "${RED}错误: ffmpeg 程序不存在${RESET}"
+        echo -e "${RED}错误: 未找到 ffmpeg 程序${RESET}"
         echo -e "${YELLOW}请运行 ./install.sh 安装程序${RESET}"
-        exit 1
+        log "ERROR" "未找到 ffmpeg 程序"
+        error_occurred=1
+    elif [[ ! -x "$SCRIPT_DIR/ffmpeg" ]]; then
+        echo -e "${YELLOW}设置 ffmpeg 可执行权限...${RESET}"
+        if chmod +x "$SCRIPT_DIR/ffmpeg"; then
+            echo -e "${GREEN}权限设置成功${RESET}"
+            log "INFO" "为 ffmpeg 设置可执行权限"
+        else
+            echo -e "${RED}权限设置失败${RESET}"
+            log "ERROR" "无法为 ffmpeg 设置可执行权限"
+        fi
+    else
+        echo -e "${GREEN}ffmpeg 检查通过${RESET}"
+        log "INFO" "ffmpeg 检查通过"
     fi
     
-    chmod +x "$SCRIPT_DIR/N_m3u8DL-RE" 2>/dev/null
-    chmod +x "$SCRIPT_DIR/ffmpeg" 2>/dev/null
+    if [[ $error_occurred -eq 1 ]]; then
+        echo -e "${RED}程序依赖检查失败${RESET}"
+        log "ERROR" "程序依赖检查失败"
+        return 1
+    fi
+    
+    echo -e "${GREEN}所有程序依赖检查完成${RESET}"
+    log "INFO" "所有程序依赖检查完成"
+    return 0
 }
 
 # 创建目录
