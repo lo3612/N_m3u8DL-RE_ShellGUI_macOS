@@ -628,20 +628,19 @@ show_selection_menu() {
 
 # 显示进度条
 show_progress() {
-    local current="$1"
-    local total="$2"
+    local current=$1
+    local total=$2
     local width=50
     local percentage=$((current * 100 / total))
-    local filled=$((width * current / total))
-    local empty=$((width - filled))
+    local completed=$((width * current / total))
     
     printf "\r["
-    printf "%${filled}s" | tr ' ' '█'
-    printf "%${empty}s" | tr ' ' '░'
-    printf "] %d%%" "$percentage"
+    printf "%*s" $completed | tr ' ' '█'
+    printf "%*s" $((width - completed)) | tr ' ' '░'
+    printf "] %d%%" $percentage
     
-    if [[ "$current" -eq "$total" ]]; then
-        echo ""
+    if [[ $current -eq $total ]]; then
+        echo ""  # 完成后换行
     fi
 }
 
@@ -693,5 +692,18 @@ cleanup_empty_temp_dirs() {
         find "$TempDir" -name ".DS_Store" -type f -delete 2>/dev/null
         # 再删除所有空目录
         find "$TempDir" -type d -empty -delete 2>/dev/null
+    fi
+}
+
+# 创建必要目录
+create_directories() {
+    if [[ ! -d "$SaveDir" ]]; then
+        mkdir -p "$SaveDir"
+        echo -e "${GREEN}创建下载目录: $SaveDir${RESET}"
+    fi
+    
+    if [[ ! -d "$TempDir" ]]; then
+        mkdir -p "$TempDir"
+        echo -e "${GREEN}创建临时目录: $TempDir${RESET}"
     fi
 }
