@@ -124,9 +124,24 @@ download_n_m3u8dl_re() {
     log "INFO" "检测到系统架构: $arch"
     
     echo -e "${BLUE}获取最新版本信息...${RESET}"
-    local response=$(curl -s "https://api.github.com/repos/nilaoda/N_m3u8DL-RE/releases/latest")
-    if [[ $? -ne 0 ]]; then
+    local response=""
+    local retry_count=3
+    
+    # 重试机制
+    for i in $(seq 1 $retry_count); do
+        response=$(curl -s --connect-timeout 10 "https://api.github.com/repos/nilaoda/N_m3u8DL-RE/releases/latest")
+        if [[ $? -eq 0 && -n "$response" ]]; then
+            break
+        else
+            echo -e "${YELLOW}获取版本信息失败，第 $i 次重试...${RESET}"
+            log "WARN" "获取版本信息失败，第 $i 次重试"
+            sleep 2
+        fi
+    done
+    
+    if [[ -z "$response" ]]; then
         echo -e "${RED}无法获取版本信息${RESET}"
+        log "ERROR" "无法获取版本信息，重试 $retry_count 次后仍然失败"
         return 1
     fi
     
@@ -141,23 +156,34 @@ download_n_m3u8dl_re() {
     
     if [[ -z "$download_url" ]]; then
         echo -e "${RED}未找到对应架构的下载链接${RESET}"
+        log "ERROR" "未找到对应架构的下载链接: $arch"
         return 1
     fi
     
     echo -e "${GREEN}找到最新版本: $version${RESET}"
+    log "INFO" "找到最新版本: $version"
     
     # 检查本地版本（如果存在）
     if [[ -f "$SCRIPT_DIR/N_m3u8DL-RE" ]]; then
-        local local_version=$("$SCRIPT_DIR/N_m3u8DL-RE" --version 2>/dev/null | head -1)
-        echo -e "${BLUE}本地版本: ${local_version}${RESET}"
-        
-        # 提取版本号进行比较（只比较主版本号）
-        local local_ver_num=$(echo "$local_version" | grep -o '^[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1)
-        local remote_ver_num=$(echo "$version" | sed 's/^v//' | sed 's/-.*$//')
-        
-        if [[ "$local_ver_num" == "$remote_ver_num" ]]; then
-            echo -e "${GREEN}N_m3u8DL-RE 已是最新版本，无需下载${RESET}"
-            return 0
+        local local_version=""
+        local local_version_output=$("$SCRIPT_DIR/N_m3u8DL-RE" --version 2>&1)
+        if [[ $? -eq 0 ]]; then
+            local_version=$(echo "$local_version_output" | head -1)
+            echo -e "${BLUE}本地版本: ${local_version}${RESET}"
+            log "INFO" "本地版本: ${local_version}"
+            
+            # 提取版本号进行比较（只比较主版本号）
+            local local_ver_num=$(echo "$local_version" | grep -o '^[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1)
+            local remote_ver_num=$(echo "$version" | sed 's/^v//' | sed 's/-.*$//')
+            
+            if [[ "$local_ver_num" == "$remote_ver_num" ]]; then
+                echo -e "${GREEN}N_m3u8DL-RE 已是最新版本，无需下载${RESET}"
+                log "INFO" "N_m3u8DL-RE 已是最新版本，无需下载"
+                return 0
+            fi
+        else
+            echo -e "${YELLOW}无法获取本地版本信息: $local_version_output${RESET}"
+            log "WARN" "无法获取本地版本信息: $local_version_output"
         fi
     fi
     
@@ -167,16 +193,34 @@ download_n_m3u8dl_re() {
     
     local filename="N_m3u8DL-RE_${version}.tar.gz"
     echo -e "${BLUE}下载中...${RESET}"
-    if ! curl -L -o "$filename" "$download_url"; then
+    log "INFO" "开始下载: $filename"
+    
+    # 添加下载进度和重试机制
+    local download_success=false
+    for i in $(seq 1 $retry_count); do
+        if curl -L -o "$filename" "$download_url"; then
+            download_success=true
+            break
+        else
+            echo -e "${YELLOW}下载失败，第 $i 次重试...${RESET}"
+            log "WARN" "下载失败，第 $i 次重试"
+            sleep 2
+        fi
+    done
+    
+    if [[ "$download_success" == false ]]; then
         echo -e "${RED}下载失败${RESET}"
+        log "ERROR" "下载失败，重试 $retry_count 次后仍然失败"
         cd "$SCRIPT_DIR"
         rm -rf "$temp_dir"
         return 1
     fi
     
     echo -e "${BLUE}解压中...${RESET}"
+    log "INFO" "开始解压: $filename"
     if ! tar -xzf "$filename"; then
         echo -e "${RED}解压失败${RESET}"
+        log "ERROR" "解压失败: $filename"
         cd "$SCRIPT_DIR"
         rm -rf "$temp_dir"
         return 1
@@ -185,6 +229,7 @@ download_n_m3u8dl_re() {
     local executable=$(find . -name "N_m3u8DL-RE" -type f | head -1)
     if [[ -z "$executable" ]]; then
         echo -e "${RED}未找到可执行文件${RESET}"
+        log "ERROR" "未找到可执行文件"
         cd "$SCRIPT_DIR"
         rm -rf "$temp_dir"
         return 1
@@ -192,19 +237,37 @@ download_n_m3u8dl_re() {
     
     # 备份旧版本（仅在更新模式下）
     if [[ "$backup_old" == "true" && -f "$SCRIPT_DIR/N_m3u8DL-RE" ]]; then
-        mv "$SCRIPT_DIR/N_m3u8DL-RE" "$SCRIPT_DIR/N_m3u8DL-RE.backup"
+        echo -e "${BLUE}备份旧版本...${RESET}"
+        if mv "$SCRIPT_DIR/N_m3u8DL-RE" "$SCRIPT_DIR/N_m3u8DL-RE.backup"; then
+            echo -e "${GREEN}旧版本已备份${RESET}"
+            log "INFO" "旧版本已备份"
+        else
+            echo -e "${YELLOW}备份旧版本失败${RESET}"
+            log "WARN" "备份旧版本失败"
+        fi
     fi
     
-    cp "$executable" "$SCRIPT_DIR/N_m3u8DL-RE"
-    chmod +x "$SCRIPT_DIR/N_m3u8DL-RE"
+    echo -e "${BLUE}安装新版本...${RESET}"
+    if cp "$executable" "$SCRIPT_DIR/N_m3u8DL-RE" && chmod +x "$SCRIPT_DIR/N_m3u8DL-RE"; then
+        echo -e "${GREEN}N_m3u8DL-RE 安装完成${RESET}"
+        log "INFO" "N_m3u8DL-RE 安装完成"
+    else
+        echo -e "${RED}N_m3u8DL-RE 安装失败${RESET}"
+        log "ERROR" "N_m3u8DL-RE 安装失败"
+        cd "$SCRIPT_DIR"
+        rm -rf "$temp_dir"
+        return 1
+    fi
     
     cd "$SCRIPT_DIR"
     rm -rf "$temp_dir"
     
     if [[ "$mode" == "install" ]]; then
         echo -e "${GREEN}N_m3u8DL-RE 安装完成${RESET}"
+        log "INFO" "N_m3u8DL-RE 安装完成"
     else
         echo -e "${GREEN}N_m3u8DL-RE 更新完成${RESET}"
+        log "INFO" "N_m3u8DL-RE 更新完成"
     fi
     return 0
 }
@@ -239,9 +302,15 @@ download_ffmpeg() {
         log "INFO" "未找到本地ffmpeg，准备下载"
     else
         # 获取本地版本
-        local local_version=$("$SCRIPT_DIR/ffmpeg" -version 2>/dev/null | head -1)
-        echo -e "${BLUE}本地版本: ${local_version}${RESET}"
-        log "INFO" "本地ffmpeg版本: $local_version"
+        local local_version_output=$("$SCRIPT_DIR/ffmpeg" -version 2>&1)
+        if [[ $? -eq 0 ]]; then
+            local local_version=$(echo "$local_version_output" | head -1)
+            echo -e "${BLUE}本地版本: ${local_version}${RESET}"
+            log "INFO" "本地ffmpeg版本: $local_version"
+        else
+            echo -e "${YELLOW}无法获取本地ffmpeg版本: $local_version_output${RESET}"
+            log "WARN" "无法获取本地ffmpeg版本: $local_version_output"
+        fi
         
         # 在安装模式下也检查版本
         if [[ "$mode" == "install" ]]; then
@@ -257,16 +326,36 @@ download_ffmpeg() {
     cd "$temp_dir"
     
     echo -e "${BLUE}下载中...${RESET}"
-    if ! curl -L -o "ffmpeg.zip" "https://evermeet.cx/ffmpeg/getrelease/zip"; then
+    log "INFO" "开始下载ffmpeg"
+    
+    # 添加重试机制
+    local retry_count=3
+    local download_success=false
+    
+    for i in $(seq 1 $retry_count); do
+        if curl -L -o "ffmpeg.zip" "https://evermeet.cx/ffmpeg/getrelease/zip"; then
+            download_success=true
+            break
+        else
+            echo -e "${YELLOW}下载失败，第 $i 次重试...${RESET}"
+            log "WARN" "ffmpeg下载失败，第 $i 次重试"
+            sleep 2
+        fi
+    done
+    
+    if [[ "$download_success" == false ]]; then
         echo -e "${RED}下载ffmpeg失败${RESET}"
+        log "ERROR" "下载ffmpeg失败，重试 $retry_count 次后仍然失败"
         cd "$SCRIPT_DIR"
         rm -rf "$temp_dir"
         return 1
     fi
     
     echo -e "${BLUE}解压中...${RESET}"
+    log "INFO" "开始解压ffmpeg"
     if ! unzip -q "ffmpeg.zip"; then
         echo -e "${RED}解压ffmpeg失败${RESET}"
+        log "ERROR" "解压ffmpeg失败"
         cd "$SCRIPT_DIR"
         rm -rf "$temp_dir"
         return 1
@@ -275,6 +364,7 @@ download_ffmpeg() {
     local ffmpeg_executable=$(find . -name "ffmpeg" -type f | head -1)
     if [[ -z "$ffmpeg_executable" ]]; then
         echo -e "${RED}未找到ffmpeg可执行文件${RESET}"
+        log "ERROR" "未找到ffmpeg可执行文件"
         cd "$SCRIPT_DIR"
         rm -rf "$temp_dir"
         return 1
@@ -282,32 +372,58 @@ download_ffmpeg() {
     
     # 检查版本（仅在更新模式下）
     if [[ "$mode" == "update" && -f "$SCRIPT_DIR/ffmpeg" ]]; then
-        local remote_version=$("$ffmpeg_executable" -version | head -1)
-        echo -e "${BLUE}远程版本: ${remote_version}${RESET}"
-        
-        if [[ "$local_version" == "$remote_version" ]]; then
-            echo -e "${GREEN}ffmpeg 已是最新版本，无需更新${RESET}"
-            cd "$SCRIPT_DIR"
-            rm -rf "$temp_dir"
-            return 0
+        local remote_version_output=$("$ffmpeg_executable" -version 2>&1)
+        if [[ $? -eq 0 ]]; then
+            local remote_version=$(echo "$remote_version_output" | head -1)
+            echo -e "${BLUE}远程版本: ${remote_version}${RESET}"
+            log "INFO" "远程ffmpeg版本: $remote_version"
+            
+            if [[ "$local_version" == "$remote_version" ]]; then
+                echo -e "${GREEN}ffmpeg 已是最新版本，无需更新${RESET}"
+                log "INFO" "ffmpeg 已是最新版本，无需更新"
+                cd "$SCRIPT_DIR"
+                rm -rf "$temp_dir"
+                return 0
+            fi
+        else
+            echo -e "${YELLOW}无法获取远程ffmpeg版本: $remote_version_output${RESET}"
+            log "WARN" "无法获取远程ffmpeg版本: $remote_version_output"
         fi
     fi
     
     # 备份旧版本（仅在更新模式下）
     if [[ "$backup_old" == "true" && -f "$SCRIPT_DIR/ffmpeg" ]]; then
-        mv "$SCRIPT_DIR/ffmpeg" "$SCRIPT_DIR/ffmpeg.backup"
+        echo -e "${BLUE}备份旧版本...${RESET}"
+        if mv "$SCRIPT_DIR/ffmpeg" "$SCRIPT_DIR/ffmpeg.backup"; then
+            echo -e "${GREEN}旧版本已备份${RESET}"
+            log "INFO" "ffmpeg旧版本已备份"
+        else
+            echo -e "${YELLOW}备份旧版本失败${RESET}"
+            log "WARN" "ffmpeg备份旧版本失败"
+        fi
     fi
     
-    cp "$ffmpeg_executable" "$SCRIPT_DIR/ffmpeg"
-    chmod +x "$SCRIPT_DIR/ffmpeg"
+    echo -e "${BLUE}安装新版本...${RESET}"
+    if cp "$ffmpeg_executable" "$SCRIPT_DIR/ffmpeg" && chmod +x "$SCRIPT_DIR/ffmpeg"; then
+        echo -e "${GREEN}ffmpeg 安装完成${RESET}"
+        log "INFO" "ffmpeg 安装完成"
+    else
+        echo -e "${RED}ffmpeg 安装失败${RESET}"
+        log "ERROR" "ffmpeg 安装失败"
+        cd "$SCRIPT_DIR"
+        rm -rf "$temp_dir"
+        return 1
+    fi
     
     cd "$SCRIPT_DIR"
     rm -rf "$temp_dir"
     
     if [[ "$mode" == "install" ]]; then
         echo -e "${GREEN}ffmpeg 安装完成${RESET}"
+        log "INFO" "ffmpeg 安装完成"
     else
         echo -e "${GREEN}ffmpeg 更新完成${RESET}"
+        log "INFO" "ffmpeg 更新完成"
     fi
     return 0
 }
