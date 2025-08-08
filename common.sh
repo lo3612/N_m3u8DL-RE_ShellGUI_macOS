@@ -22,7 +22,7 @@ LOG_FILE="$SCRIPT_DIR/m3u8dl.log"
 LOCK_FILE="$SCRIPT_DIR/m3u8dl.lock"
 
 # 默认配置
-ThreadCount=32
+ThreadCount=16
 RetryCount=3
 Timeout=10
 SaveDir="$SCRIPT_DIR/downloads"
@@ -568,3 +568,14 @@ get_user_choice() {
         :
     done
 } 
+
+# 清理空的临时目录
+cleanup_empty_temp_dirs() {
+    # 删除空的目录，包括只包含.DS_Store文件的目录（MacOS系统文件）
+    if [[ -d "$TempDir" ]]; then
+        # 先删除所有.DS_Store文件
+        find "$TempDir" -name ".DS_Store" -type f -delete 2>/dev/null
+        # 再删除所有空目录
+        find "$TempDir" -type d -empty -delete 2>/dev/null
+    fi
+}
