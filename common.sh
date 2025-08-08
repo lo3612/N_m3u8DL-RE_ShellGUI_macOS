@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# 公共函数库 - 被所有脚本引用
+# 高级功能
 
 # 颜色代码
 readonly RED='\033[0;31m'
@@ -13,474 +13,18 @@ readonly WHITE='\033[0;37m'
 readonly BOLD='\033[1m'
 readonly RESET='\033[0m'
 
-# 获取脚本目录
+# 全局变量
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# 配置文件路径
 CONFIG_FILE="$SCRIPT_DIR/config.conf"
 LOG_FILE="$SCRIPT_DIR/m3u8dl.log"
-LOCK_FILE="$SCRIPT_DIR/m3u8dl.lock"
-
-# 默认配置
-ThreadCount=16
-RetryCount=3
-Timeout=10
-SaveDir="$SCRIPT_DIR/downloads"
-TempDir="$SCRIPT_DIR/temp"
-Language="zh-CN"
-LogLevel="INFO"
-AutoSelect="true"
-ConcurrentDownload="true"
-RealTimeDecryption="true"
-CheckSegments="true"
-DeleteAfterDone="false"
-WriteMetaJson="true"
-AppendUrlParams="true"
-
-# 检查系统架构
-get_system_arch() {
-    local arch=$(uname -m)
-    case "$arch" in
-        "arm64"|"aarch64") echo "osx-arm64" ;;
-        "x86_64") echo "osx-x64" ;;
-        *) echo "unknown" ;;
-    esac
-}
-
-# 检查网络连接
-check_network() {
-    echo -e "${BLUE}正在检查网络连接...${RESET}"
-    
-    # 尝试使用curl检查网络连接
-    if command -v curl >/dev/null 2>&1; then
-        if curl -s --head https://github.com > /dev/null; then
-            echo -e "${GREEN}网络连接正常${RESET}"
-            log "INFO" "网络连接检查成功"
-            return 0
-        else
-            echo -e "${RED}网络连接失败${RESET}"
-            log "ERROR" "网络连接检查失败"
-            return 1
-        fi
-    else
-        # 如果没有安装curl，使用ping检查
-        if ping -c 1 8.8.8.8 >/dev/null 2>&1; then
-            echo -e "${GREEN}网络连接正常${RESET}"
-            log "INFO" "网络连接检查成功"
-            return 0
-        else
-            echo -e "${RED}网络连接失败${RESET}"
-            log "ERROR" "网络连接检查失败"
-            return 1
-        fi
-    fi
-}
-
-# 获取本地版本
-get_local_version() {
-    if [[ -f "N_m3u8DL-RE" ]]; then
-        local version=$("./N_m3u8DL-RE" --version 2>/dev/null | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1)
-        echo "$version"
-    else
-        echo ""
-    fi
-}
-
-# 获取远程版本
-get_remote_version() {
-    local response=$(curl -s "https://api.github.com/repos/nilaoda/N_m3u8DL-RE/releases/latest")
-    if [[ $? -ne 0 ]]; then
-        echo ""
-        return 1
-    fi
-    
-    local version=$(echo "$response" | grep -o '"tag_name": "[^"]*"' | cut -d'"' -f4)
-    version=$(echo "$version" | sed 's/^v//')
-    echo "$version"
-}
-
-# 下载N_m3u8DL-RE (通用函数)
-download_n_m3u8dl_re() {
-    local mode="$1"  # "install" 或 "update"
-    local backup_old="$2"  # 是否备份旧版本
-    
-    echo -e "${BLUE}开始下载N_m3u8DL-RE...${RESET}"
-    log "INFO" "开始下载N_m3u8DL-RE ($mode 模式)"
-    
-    if ! check_network; then
-        echo -e "${RED}网络检查失败，下载中止${RESET}"
-        log "ERROR" "网络检查失败，下载中止"
-        return 1
-    fi
-    
-    local arch=$(get_system_arch)
-    if [[ "$arch" == "unknown" ]]; then
-        echo -e "${RED}不支持的架构${RESET}"
-        log "ERROR" "不支持的架构: $arch"
-        return 1
-    fi
-    
-    echo -e "${BLUE}系统架构: ${arch}${RESET}"
-    log "INFO" "检测到系统架构: $arch"
-    
-    echo -e "${BLUE}获取最新版本信息...${RESET}"
-    local response=""
-    local retry_count=3
-    
-    # 重试机制
-    for i in $(seq 1 $retry_count); do
-        response=$(curl -s --connect-timeout 10 "https://api.github.com/repos/nilaoda/N_m3u8DL-RE/releases/latest")
-        if [[ $? -eq 0 && -n "$response" ]]; then
-            break
-        else
-            echo -e "${YELLOW}获取版本信息失败，第 $i 次重试...${RESET}"
-            log "WARN" "获取版本信息失败，第 $i 次重试"
-            sleep 2
-        fi
-    done
-    
-    if [[ -z "$response" ]]; then
-        echo -e "${RED}无法获取版本信息${RESET}"
-        log "ERROR" "无法获取版本信息，重试 $retry_count 次后仍然失败"
-        return 1
-    fi
-    
-    local version=$(echo "$response" | grep -o '"tag_name": "[^"]*"' | cut -d'"' -f4)
-    local download_url=""
-    
-    if [[ "$arch" == "osx-arm64" ]]; then
-        download_url=$(echo "$response" | grep -o '"browser_download_url": "[^"]*osx-arm64[^"]*\.tar\.gz"' | cut -d'"' -f4)
-    elif [[ "$arch" == "osx-x64" ]]; then
-        download_url=$(echo "$response" | grep -o '"browser_download_url": "[^"]*osx-x64[^"]*\.tar\.gz"' | cut -d'"' -f4)
-    fi
-    
-    if [[ -z "$download_url" ]]; then
-        echo -e "${RED}未找到对应架构的下载链接${RESET}"
-        log "ERROR" "未找到对应架构的下载链接: $arch"
-        return 1
-    fi
-    
-    echo -e "${GREEN}找到最新版本: $version${RESET}"
-    log "INFO" "找到最新版本: $version"
-    
-    # 检查本地版本（如果存在）
-    if [[ -f "$SCRIPT_DIR/N_m3u8DL-RE" ]]; then
-        local local_version=""
-        local local_version_output=$("$SCRIPT_DIR/N_m3u8DL-RE" --version 2>&1)
-        if [[ $? -eq 0 ]]; then
-            local_version=$(echo "$local_version_output" | head -1)
-            echo -e "${BLUE}本地版本: ${local_version}${RESET}"
-            log "INFO" "本地版本: ${local_version}"
-            
-            # 提取版本号进行比较（只比较主版本号）
-            local local_ver_num=$(echo "$local_version" | grep -o '^[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1)
-            local remote_ver_num=$(echo "$version" | sed 's/^v//' | sed 's/-.*$//')
-            
-            if [[ "$local_ver_num" == "$remote_ver_num" ]]; then
-                echo -e "${GREEN}N_m3u8DL-RE 已是最新版本，无需下载${RESET}"
-                log "INFO" "N_m3u8DL-RE 已是最新版本，无需下载"
-                return 0
-            fi
-        else
-            echo -e "${YELLOW}无法获取本地版本信息: $local_version_output${RESET}"
-            log "WARN" "无法获取本地版本信息: $local_version_output"
-        fi
-    fi
-    
-    local temp_dir="$SCRIPT_DIR/temp"
-    mkdir -p "$temp_dir"
-    cd "$temp_dir"
-    
-    local filename="N_m3u8DL-RE_${version}.tar.gz"
-    echo -e "${BLUE}下载中...${RESET}"
-    log "INFO" "开始下载: $filename"
-    
-    # 添加下载进度和重试机制
-    local download_success=false
-    for i in $(seq 1 $retry_count); do
-        if curl -L -o "$filename" "$download_url"; then
-            download_success=true
-            break
-        else
-            echo -e "${YELLOW}下载失败，第 $i 次重试...${RESET}"
-            log "WARN" "下载失败，第 $i 次重试"
-            sleep 2
-        fi
-    done
-    
-    if [[ "$download_success" == false ]]; then
-        echo -e "${RED}下载失败${RESET}"
-        log "ERROR" "下载失败，重试 $retry_count 次后仍然失败"
-        cd "$SCRIPT_DIR"
-        rm -rf "$temp_dir"
-        return 1
-    fi
-    
-    echo -e "${BLUE}解压中...${RESET}"
-    log "INFO" "开始解压: $filename"
-    if ! tar -xzf "$filename"; then
-        echo -e "${RED}解压失败${RESET}"
-        log "ERROR" "解压失败: $filename"
-        cd "$SCRIPT_DIR"
-        rm -rf "$temp_dir"
-        return 1
-    fi
-    
-    local executable=$(find . -name "N_m3u8DL-RE" -type f | head -1)
-    if [[ -z "$executable" ]]; then
-        echo -e "${RED}未找到可执行文件${RESET}"
-        log "ERROR" "未找到可执行文件"
-        cd "$SCRIPT_DIR"
-        rm -rf "$temp_dir"
-        return 1
-    fi
-    
-    # 备份旧版本（仅在更新模式下）
-    if [[ "$backup_old" == "true" && -f "$SCRIPT_DIR/N_m3u8DL-RE" ]]; then
-        echo -e "${BLUE}备份旧版本...${RESET}"
-        if mv "$SCRIPT_DIR/N_m3u8DL-RE" "$SCRIPT_DIR/N_m3u8DL-RE.backup"; then
-            echo -e "${GREEN}旧版本已备份${RESET}"
-            log "INFO" "旧版本已备份"
-        else
-            echo -e "${YELLOW}备份旧版本失败${RESET}"
-            log "WARN" "备份旧版本失败"
-        fi
-    fi
-    
-    echo -e "${BLUE}安装新版本...${RESET}"
-    if cp "$executable" "$SCRIPT_DIR/N_m3u8DL-RE" && chmod +x "$SCRIPT_DIR/N_m3u8DL-RE"; then
-        echo -e "${GREEN}N_m3u8DL-RE 安装完成${RESET}"
-        log "INFO" "N_m3u8DL-RE 安装完成"
-    else
-        echo -e "${RED}N_m3u8DL-RE 安装失败${RESET}"
-        log "ERROR" "N_m3u8DL-RE 安装失败"
-        cd "$SCRIPT_DIR"
-        rm -rf "$temp_dir"
-        return 1
-    fi
-    
-    cd "$SCRIPT_DIR"
-    rm -rf "$temp_dir"
-    
-    if [[ "$mode" == "install" ]]; then
-        echo -e "${GREEN}N_m3u8DL-RE 安装完成${RESET}"
-        log "INFO" "N_m3u8DL-RE 安装完成"
-    else
-        echo -e "${GREEN}N_m3u8DL-RE 更新完成${RESET}"
-        log "INFO" "N_m3u8DL-RE 更新完成"
-    fi
-    return 0
-}
-
-# 下载ffmpeg (通用函数)
-download_ffmpeg() {
-    local mode="$1"  # "install" 或 "update"
-    local backup_old="$2"  # 是否备份旧版本
-    
-    echo -e "${BLUE}开始检查ffmpeg...${RESET}"
-    log "INFO" "开始检查ffmpeg ($mode 模式)"
-    
-    if ! check_network; then
-        echo -e "${RED}网络检查失败，下载中止${RESET}"
-        log "ERROR" "网络检查失败，下载中止"
-        return 1
-    fi
-    
-    local arch=$(get_system_arch)
-    if [[ "$arch" == "unknown" ]]; then
-        echo -e "${RED}不支持的架构${RESET}"
-        log "ERROR" "不支持的架构: $arch"
-        return 1
-    fi
-    
-    echo -e "${BLUE}系统架构: ${arch}${RESET}"
-    log "INFO" "检测到系统架构: $arch"
-    
-    # 检查本地ffmpeg是否存在
-    if [[ ! -f "$SCRIPT_DIR/ffmpeg" ]]; then
-        echo -e "${BLUE}本地未找到ffmpeg，开始下载...${RESET}"
-        log "INFO" "未找到本地ffmpeg，准备下载"
-    else
-        # 获取本地版本
-        local local_version_output=$("$SCRIPT_DIR/ffmpeg" -version 2>&1)
-        if [[ $? -eq 0 ]]; then
-            local local_version=$(echo "$local_version_output" | head -1)
-            echo -e "${BLUE}本地版本: ${local_version}${RESET}"
-            log "INFO" "本地ffmpeg版本: $local_version"
-        else
-            echo -e "${YELLOW}无法获取本地ffmpeg版本: $local_version_output${RESET}"
-            log "WARN" "无法获取本地ffmpeg版本: $local_version_output"
-        fi
-        
-        # 在安装模式下也检查版本
-        if [[ "$mode" == "install" ]]; then
-            echo -e "${GREEN}ffmpeg 已存在，跳过下载${RESET}"
-            log "INFO" "ffmpeg 已存在，跳过下载"
-            return 0
-        fi
-    fi
-    
-    # 下载并检查版本
-    local temp_dir="$SCRIPT_DIR/temp"
-    mkdir -p "$temp_dir"
-    cd "$temp_dir"
-    
-    echo -e "${BLUE}下载中...${RESET}"
-    log "INFO" "开始下载ffmpeg"
-    
-    # 添加重试机制
-    local retry_count=3
-    local download_success=false
-    
-    for i in $(seq 1 $retry_count); do
-        if curl -L -o "ffmpeg.zip" "https://evermeet.cx/ffmpeg/getrelease/zip"; then
-            download_success=true
-            break
-        else
-            echo -e "${YELLOW}下载失败，第 $i 次重试...${RESET}"
-            log "WARN" "ffmpeg下载失败，第 $i 次重试"
-            sleep 2
-        fi
-    done
-    
-    if [[ "$download_success" == false ]]; then
-        echo -e "${RED}下载ffmpeg失败${RESET}"
-        log "ERROR" "下载ffmpeg失败，重试 $retry_count 次后仍然失败"
-        cd "$SCRIPT_DIR"
-        rm -rf "$temp_dir"
-        return 1
-    fi
-    
-    echo -e "${BLUE}解压中...${RESET}"
-    log "INFO" "开始解压ffmpeg"
-    if ! unzip -q "ffmpeg.zip"; then
-        echo -e "${RED}解压ffmpeg失败${RESET}"
-        log "ERROR" "解压ffmpeg失败"
-        cd "$SCRIPT_DIR"
-        rm -rf "$temp_dir"
-        return 1
-    fi
-    
-    local ffmpeg_executable=$(find . -name "ffmpeg" -type f | head -1)
-    if [[ -z "$ffmpeg_executable" ]]; then
-        echo -e "${RED}未找到ffmpeg可执行文件${RESET}"
-        log "ERROR" "未找到ffmpeg可执行文件"
-        cd "$SCRIPT_DIR"
-        rm -rf "$temp_dir"
-        return 1
-    fi
-    
-    # 检查版本（仅在更新模式下）
-    if [[ "$mode" == "update" && -f "$SCRIPT_DIR/ffmpeg" ]]; then
-        local remote_version_output=$("$ffmpeg_executable" -version 2>&1)
-        if [[ $? -eq 0 ]]; then
-            local remote_version=$(echo "$remote_version_output" | head -1)
-            echo -e "${BLUE}远程版本: ${remote_version}${RESET}"
-            log "INFO" "远程ffmpeg版本: $remote_version"
-            
-            if [[ "$local_version" == "$remote_version" ]]; then
-                echo -e "${GREEN}ffmpeg 已是最新版本，无需更新${RESET}"
-                log "INFO" "ffmpeg 已是最新版本，无需更新"
-                cd "$SCRIPT_DIR"
-                rm -rf "$temp_dir"
-                return 0
-            fi
-        else
-            echo -e "${YELLOW}无法获取远程ffmpeg版本: $remote_version_output${RESET}"
-            log "WARN" "无法获取远程ffmpeg版本: $remote_version_output"
-        fi
-    fi
-    
-    # 备份旧版本（仅在更新模式下）
-    if [[ "$backup_old" == "true" && -f "$SCRIPT_DIR/ffmpeg" ]]; then
-        echo -e "${BLUE}备份旧版本...${RESET}"
-        if mv "$SCRIPT_DIR/ffmpeg" "$SCRIPT_DIR/ffmpeg.backup"; then
-            echo -e "${GREEN}旧版本已备份${RESET}"
-            log "INFO" "ffmpeg旧版本已备份"
-        else
-            echo -e "${YELLOW}备份旧版本失败${RESET}"
-            log "WARN" "ffmpeg备份旧版本失败"
-        fi
-    fi
-    
-    echo -e "${BLUE}安装新版本...${RESET}"
-    if cp "$ffmpeg_executable" "$SCRIPT_DIR/ffmpeg" && chmod +x "$SCRIPT_DIR/ffmpeg"; then
-        echo -e "${GREEN}ffmpeg 安装完成${RESET}"
-        log "INFO" "ffmpeg 安装完成"
-    else
-        echo -e "${RED}ffmpeg 安装失败${RESET}"
-        log "ERROR" "ffmpeg 安装失败"
-        cd "$SCRIPT_DIR"
-        rm -rf "$temp_dir"
-        return 1
-    fi
-    
-    cd "$SCRIPT_DIR"
-    rm -rf "$temp_dir"
-    
-    if [[ "$mode" == "install" ]]; then
-        echo -e "${GREEN}ffmpeg 安装完成${RESET}"
-        log "INFO" "ffmpeg 安装完成"
-    else
-        echo -e "${GREEN}ffmpeg 更新完成${RESET}"
-        log "INFO" "ffmpeg 更新完成"
-    fi
-    return 0
-}
-
-# 设置权限
-set_permissions() {
-    echo -e "${BLUE}设置执行权限...${RESET}"
-    chmod +x m3u8DL_enhanced.sh 2>/dev/null
-    chmod +x auto_update.sh 2>/dev/null
-    chmod +x install.sh 2>/dev/null
-    chmod +x start.sh 2>/dev/null
-    chmod +x advanced.sh 2>/dev/null
-    echo -e "${GREEN}权限设置完成${RESET}"
-}
-
-# 自动赋予执行权限
-auto_set_exec_permissions() {
-    if [[ -f "$SCRIPT_DIR/N_m3u8DL-RE" ]]; then
-        chmod +x "$SCRIPT_DIR/N_m3u8DL-RE"
-        echo -e "\033[0;32m已为 N_m3u8DL-RE 添加执行权限\033[0m"
-    fi
-    if [[ -f "$SCRIPT_DIR/ffmpeg" ]]; then
-        chmod +x "$SCRIPT_DIR/ffmpeg"
-        echo -e "\033[0;32m已为 ffmpeg 添加执行权限\033[0m"
-    fi
-    echo -e "\033[0;36m安装完成！如遇无法执行请手动运行：chmod +x N_m3u8DL-RE ffmpeg\033[0m"
-}
 
 # 加载配置
-load_config() {
-    if [[ -f "$CONFIG_FILE" ]]; then
-        source "$CONFIG_FILE"
-    else
-        save_config
-    fi
-}
-
-# 保存配置
-save_config() {
-    cat > "$CONFIG_FILE" << EOF
-# 配置文件
-ThreadCount=$ThreadCount
-RetryCount=$RetryCount
-Timeout=$Timeout
-SaveDir="$SaveDir"
-TempDir="$TempDir"
-Language=$Language
-LogLevel=$LogLevel
-AutoSelect=$AutoSelect
-ConcurrentDownload=$ConcurrentDownload
-RealTimeDecryption=$RealTimeDecryption
-CheckSegments=$CheckSegments
-DeleteAfterDone=$DeleteAfterDone
-WriteMetaJson=$WriteMetaJson
-AppendUrlParams=$AppendUrlParams
-EOF
-}
+if [[ -f "$CONFIG_FILE" ]]; then
+    source "$CONFIG_FILE"
+else
+    echo -e "${RED}配置文件不存在，请先运行主程序${RESET}"
+    exit 1
+fi
 
 # 日志函数
 log() {
@@ -496,194 +40,6 @@ log() {
     esac
 }
 
-# 检查程序依赖
-check_programs() {
-    echo -e "${BLUE}正在检查程序依赖...${RESET}"
-    local error_occurred=0
-    
-    # 检查 N_m3u8DL-RE
-    if [[ ! -f "$SCRIPT_DIR/N_m3u8DL-RE" ]]; then
-        echo -e "${RED}错误: 未找到 N_m3u8DL-RE 程序${RESET}"
-        echo -e "${YELLOW}请运行 ./install.sh 安装程序${RESET}"
-        log "ERROR" "未找到 N_m3u8DL-RE 程序"
-        error_occurred=1
-    elif [[ ! -x "$SCRIPT_DIR/N_m3u8DL-RE" ]]; then
-        echo -e "${YELLOW}设置 N_m3u8DL-RE 可执行权限...${RESET}"
-        if chmod +x "$SCRIPT_DIR/N_m3u8DL-RE"; then
-            echo -e "${GREEN}权限设置成功${RESET}"
-            log "INFO" "为 N_m3u8DL-RE 设置可执行权限"
-        else
-            echo -e "${RED}权限设置失败${RESET}"
-            log "ERROR" "无法为 N_m3u8DL-RE 设置可执行权限"
-        fi
-    else
-        echo -e "${GREEN}N_m3u8DL-RE 检查通过${RESET}"
-        log "INFO" "N_m3u8DL-RE 检查通过"
-    fi
-    
-    # 检查 ffmpeg
-    if [[ ! -f "$SCRIPT_DIR/ffmpeg" ]]; then
-        echo -e "${RED}错误: 未找到 ffmpeg 程序${RESET}"
-        echo -e "${YELLOW}请运行 ./install.sh 安装程序${RESET}"
-        log "ERROR" "未找到 ffmpeg 程序"
-        error_occurred=1
-    elif [[ ! -x "$SCRIPT_DIR/ffmpeg" ]]; then
-        echo -e "${YELLOW}设置 ffmpeg 可执行权限...${RESET}"
-        if chmod +x "$SCRIPT_DIR/ffmpeg"; then
-            echo -e "${GREEN}权限设置成功${RESET}"
-            log "INFO" "为 ffmpeg 设置可执行权限"
-        else
-            echo -e "${RED}权限设置失败${RESET}"
-            log "ERROR" "无法为 ffmpeg 设置可执行权限"
-        fi
-    else
-        echo -e "${GREEN}ffmpeg 检查通过${RESET}"
-        log "INFO" "ffmpeg 检查通过"
-    fi
-    
-    if [[ $error_occurred -eq 1 ]]; then
-        echo -e "${RED}程序依赖检查失败${RESET}"
-        log "ERROR" "程序依赖检查失败"
-        return 1
-    fi
-    
-    echo -e "${GREEN}所有程序依赖检查完成${RESET}"
-    log "INFO" "所有程序依赖检查完成"
-    return 0
-}
-
-# 创建目录
-create_directories() {
-    mkdir -p "$SaveDir"
-    mkdir -p "$TempDir"
-    mkdir -p "$(dirname "$LOG_FILE")"
-}
-
-# 获取终端尺寸
-get_terminal_size() {
-    local cols=$(tput cols 2>/dev/null || echo 80)
-    local lines=$(tput lines 2>/dev/null || echo 24)
-    echo "$cols $lines"
-}
-
-# 计算自适应宽度
-get_adaptive_width() {
-    local cols=$(get_terminal_size | cut -d' ' -f1)
-    local min_width=60
-    local max_width=120
-    local width=$((cols - 2))  # 只留2个字符的边距
-    
-    if [[ $width -lt $min_width ]]; then
-        width=$min_width
-    elif [[ $width -gt $max_width ]]; then
-        width=$max_width
-    fi
-    
-    echo "$width"
-}
-
-# 生成自适应边框
-generate_border() {
-    local width="$1"
-    local char="$2"
-    printf "%${width}s" | tr ' ' "$char"
-}
-
-# 显示简洁标题
-show_title() {
-    local title="$1"
-    echo -e "${CYAN}${BOLD}========================================${RESET}"
-    echo -e "${CYAN}${BOLD}  $title${RESET}"
-    echo -e "${CYAN}${BOLD}========================================${RESET}"
-    echo ""
-}
-
-# 显示简洁菜单
-show_menu() {
-    local title="$1"
-    shift
-    local options=("$@")
-    
-    show_title "$title"
-    for i in "${!options[@]}"; do
-        echo -e "${WHITE}$((i+1)). ${options[i]}${RESET}"
-    done
-    echo -e "${WHITE}0. 返回${RESET}"
-    echo ""
-}
-
-# 显示选择菜单
-show_selection_menu() {
-    local title="$1"
-    shift
-    local options=("$@")
-    
-    show_title "$title"
-    for i in "${!options[@]}"; do
-        echo -e "${WHITE}$((i+1)). ${options[i]}${RESET}"
-    done
-    echo -e "${WHITE}0. 返回${RESET}"
-    echo ""
-}
-
-# 显示进度条
-show_progress() {
-    local current=$1
-    local total=$2
-    local width=50
-    local percentage=$((current * 100 / total))
-    local completed=$((width * current / total))
-    
-    printf "\r["
-    printf "%*s" $completed | tr ' ' '█'
-    printf "%*s" $((width - completed)) | tr ' ' '░'
-    printf "] %d%%" $percentage
-    
-    if [[ $current -eq $total ]]; then
-        echo ""  # 完成后换行
-    fi
-}
-
-# 显示确认对话框
-confirm_action() {
-    local message="$1"
-    echo -e "${YELLOW}$message${RESET}"
-    read -p "确认操作? (y/N): " confirm
-    [[ "$confirm" == "y" || "$confirm" == "Y" ]]
-}
-
-# 显示输入框
-input_box() {
-    local prompt="$1"
-    local default="$2"
-    local input
-    
-    if [[ -n "$default" ]]; then
-        read -p "$prompt [$default]: " input
-        echo "${input:-$default}"
-    else
-        read -p "$prompt: " input
-        echo "$input"
-    fi
-}
-
-# 获取用户选择
-get_user_choice() {
-    local max="$1"
-    local choice
-    
-    while true; do
-        read -p "请选择 (0-$max): " choice
-        # 严格检查：只允许数字且在范围内
-        if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 0 && choice <= max )); then
-            echo "$choice"
-            return 0
-        fi
-        # 静默处理无效输入，不显示任何错误信息
-        :
-    done
-} 
-
 # 清理空的临时目录
 cleanup_empty_temp_dirs() {
     # 删除空的目录，包括只包含.DS_Store文件的目录（MacOS系统文件）
@@ -695,15 +51,765 @@ cleanup_empty_temp_dirs() {
     fi
 }
 
-# 创建必要目录
-create_directories() {
-    if [[ ! -d "$SaveDir" ]]; then
-        mkdir -p "$SaveDir"
-        echo -e "${GREEN}创建下载目录: $SaveDir${RESET}"
+# 显示高级菜单
+show_advanced_menu() {
+    clear
+    echo -e "${CYAN}${BOLD}========================================${RESET}"
+    echo -e "${CYAN}${BOLD}    N_m3u8DL-RE 高级功能${RESET}"
+    echo -e "${CYAN}${BOLD}========================================${RESET}"
+    echo ""
+    echo -e "${WHITE}1. 自定义参数下载${RESET}"
+    echo -e "${WHITE}2. 字幕提取${RESET}"
+    echo -e "${WHITE}3. 音视频分离下载${RESET}"
+    echo -e "${WHITE}4. 加密视频解密${RESET}"
+    echo -e "${WHITE}5. 部分分片下载${RESET}"
+    echo -e "${WHITE}6. 外部媒体混流${RESET}"
+    echo -e "${WHITE}7. 直播录制高级设置${RESET}"
+    echo -e "${WHITE}8. 批量任务管理${RESET}"
+    echo -e "${WHITE}9. 性能监控${RESET}"
+    echo -e "${WHITE}0. 返回主程序${RESET}"
+    echo ""
+}
+
+# 自定义参数下载
+custom_download() {
+    echo -e "${CYAN}=== 自定义参数下载 ===${RESET}"
+    echo ""
+    
+    read -p "请输入视频链接: " link
+    if [[ -z "$link" ]]; then
+        echo -e "${RED}链接不能为空${RESET}"
+        return 1
     fi
     
-    if [[ ! -d "$TempDir" ]]; then
-        mkdir -p "$TempDir"
-        echo -e "${GREEN}创建临时目录: $TempDir${RESET}"
+    read -p "请输入保存文件名: " filename
+    if [[ -z "$filename" ]]; then
+        filename="custom_$(date +%Y%m%d_%H%M%S)"
+    fi
+    
+    echo ""
+    echo -e "${YELLOW}自定义参数设置:${RESET}"
+    echo ""
+    
+    read -p "线程数 (默认: $ThreadCount): " custom_threads
+    custom_threads=${custom_threads:-$ThreadCount}
+    
+    read -p "重试次数 (默认: $RetryCount): " custom_retries
+    custom_retries=${custom_retries:-$RetryCount}
+    
+    read -p "超时时间(秒) (默认: $Timeout): " custom_timeout
+    custom_timeout=${custom_timeout:-$Timeout}
+    
+    read -p "限速 (如: 10M, 100K, 留空无限制): " custom_speed
+    
+    read -p "代理 (如: http://127.0.0.1:8888, 留空无代理): " custom_proxy
+    
+    read -p "是否使用系统代理? (y/N): " use_system_proxy
+    read -p "是否实时解密MP4分片? (y/N): " real_time_decrypt
+    read -p "是否二进制合并? (y/N): " binary_merge
+    
+    # 构建命令
+    local cmd="$REfile \"$link\" --save-name \"$filename\""
+    cmd+=" --thread-count $custom_threads"
+    cmd+=" --download-retry-count $custom_retries"
+    cmd+=" --http-request-timeout $custom_timeout"
+    cmd+=" --ffmpeg-binary-path \"$ffmpeg\""
+    cmd+=" --tmp-dir \"$TempDir\""
+    cmd+=" --save-dir \"$SaveDir\""
+    cmd+=" --ui-language $Language"
+    cmd+=" --log-level $LogLevel"
+    
+    # 可选参数
+    [[ "$AutoSelect" == "true" ]] && cmd+=" --auto-select"
+    [[ "$ConcurrentDownload" == "true" ]] && cmd+=" -mt"
+    [[ "$RealTimeDecryption" == "true" ]] && cmd+=" --mp4-real-time-decryption"
+    [[ "$CheckSegments" == "true" ]] && cmd+=" --check-segments-count"
+    [[ "$DeleteAfterDone" == "true" ]] && cmd+=" --del-after-done"
+    [[ "$WriteMetaJson" == "true" ]] && cmd+=" --write-meta-json"
+    [[ "$AppendUrlParams" == "true" ]] && cmd+=" --append-url-params"
+    
+    # 自定义参数
+    [[ -n "$custom_speed" ]] && cmd+=" -R $custom_speed"
+    if [[ -n "$custom_proxy" ]]; then
+        if [[ "$custom_proxy" == "system" ]]; then
+            cmd+=" --use-system-proxy"
+        else
+            cmd+=" --custom-proxy $custom_proxy"
+        fi
+    fi
+    
+    [[ "$use_system_proxy" == "y" || "$use_system_proxy" == "Y" ]] && cmd+=" --use-system-proxy"
+    [[ "$real_time_decrypt" == "y" || "$real_time_decrypt" == "Y" ]] && cmd+=" --mp4-real-time-decryption"
+    [[ "$binary_merge" == "y" || "$binary_merge" == "Y" ]] && cmd+=" --binary-merge"
+    
+    echo ""
+    echo -e "${PURPLE}执行命令:${RESET}"
+    echo "$cmd"
+    echo ""
+    
+    read -p "确认开始下载? (y/N): " confirm
+    if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
+        log "INFO" "开始自定义下载: $link"
+        eval "$cmd"
+        local exit_code=$?
+        
+        # 清理空的临时目录
+        cleanup_empty_temp_dirs
+        
+        if [[ $exit_code -eq 0 ]]; then
+            echo -e "${GREEN}下载完成!${RESET}"
+            log "INFO" "自定义下载完成: $filename"
+        else
+            echo -e "${RED}下载失败!${RESET}"
+            log "ERROR" "自定义下载失败，退出码: $exit_code"
+        fi
     fi
 }
+
+# 字幕提取
+subtitle_extract() {
+    echo -e "${CYAN}=== 字幕提取 ===${RESET}"
+    echo ""
+    
+    read -p "请输入视频链接: " link
+    if [[ -z "$link" ]]; then
+        echo -e "${RED}链接不能为空${RESET}"
+        return 1
+    fi
+    
+    read -p "请输入保存文件名: " filename
+    if [[ -z "$filename" ]]; then
+        filename="subtitle_$(date +%Y%m%d_%H%M%S)"
+    fi
+    
+    read -p "字幕格式 (SRT/VTT, 默认: SRT): " sub_format
+    sub_format=${sub_format:-"SRT"}
+    
+    # 构建命令
+    local cmd="$REfile \"$link\" --save-name \"$filename\""
+    cmd+=" --sub-only"
+    cmd+=" --sub-format $sub_format"
+    cmd+=" --auto-subtitle-fix"
+    cmd+=" --ffmpeg-binary-path \"$ffmpeg\""
+    cmd+=" --tmp-dir \"$TempDir\""
+    cmd+=" --save-dir \"$SaveDir\""
+    cmd+=" --ui-language $Language"
+    cmd+=" --log-level $LogLevel"
+    cmd+=" --del-after-done"
+    
+    echo ""
+    echo -e "${PURPLE}执行命令:${RESET}"
+    echo "$cmd"
+    echo ""
+    
+    read -p "确认开始提取字幕? (y/N): " confirm
+    if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
+        log "INFO" "开始字幕提取: $link"
+        eval "$cmd"
+        local exit_code=$?
+        
+        # 清理空的临时目录
+        cleanup_empty_temp_dirs
+        
+        if [[ $exit_code -eq 0 ]]; then
+            echo -e "${GREEN}字幕提取完成!${RESET}"
+            log "INFO" "字幕提取完成: $filename"
+        else
+            echo -e "${RED}字幕提取失败!${RESET}"
+            log "ERROR" "字幕提取失败，退出码: $exit_code"
+        fi
+    fi
+}
+
+# 音视频分离下载
+audio_video_separate() {
+    echo -e "${CYAN}=== 音视频分离下载 ===${RESET}"
+    echo ""
+    
+    read -p "请输入视频链接: " link
+    if [[ -z "$link" ]]; then
+        echo -e "${RED}链接不能为空${RESET}"
+        return 1
+    fi
+    
+    read -p "请输入保存文件名: " filename
+    if [[ -z "$filename" ]]; then
+        filename="separate_$(date +%Y%m%d_%H%M%S)"
+    fi
+    
+    read -p "下载音频 (y/N): " download_audio
+    read -p "下载视频 (y/N): " download_video
+    
+    if [[ "$download_audio" != "y" && "$download_video" != "y" ]]; then
+        echo -e "${RED}至少需要选择下载音频或视频${RESET}"
+        return 1
+    fi
+    
+    # 构建命令
+    local cmd="$REfile \"$link\" --save-name \"$filename\""
+    cmd+=" --ffmpeg-binary-path \"$ffmpeg\""
+    cmd+=" --tmp-dir \"$TempDir\""
+    cmd+=" --save-dir \"$SaveDir\""
+    cmd+=" --ui-language $Language"
+    cmd+=" --log-level $LogLevel"
+    
+    if [[ "$download_audio" == "y" ]]; then
+        cmd+=" --audio-only"
+    fi
+    
+    if [[ "$download_video" == "y" ]]; then
+        cmd+=" --video-only"
+    fi
+    
+    echo ""
+    echo -e "${PURPLE}执行命令:${RESET}"
+    echo "$cmd"
+    echo ""
+    
+    read -p "确认开始分离下载? (y/N): " confirm
+    if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
+        log "INFO" "开始音视频分离下载: $link"
+        eval "$cmd"
+        local exit_code=$?
+        
+        # 清理空的临时目录
+        cleanup_empty_temp_dirs
+        
+        if [[ $exit_code -eq 0 ]]; then
+            echo -e "${GREEN}分离下载完成!${RESET}"
+            log "INFO" "音视频分离下载完成: $filename"
+        else
+            echo -e "${RED}分离下载失败!${RESET}"
+            log "ERROR" "音视频分离下载失败，退出码: $exit_code"
+        fi
+    fi
+}
+
+# 加密视频解密
+decrypt_video() {
+    echo -e "${CYAN}=== 加密视频解密 ===${RESET}"
+    echo ""
+    
+    read -p "请输入视频链接: " link
+    if [[ -z "$link" ]]; then
+        echo -e "${RED}链接不能为空${RESET}"
+        return 1
+    fi
+    
+    read -p "请输入保存文件名: " filename
+    if [[ -z "$filename" ]]; then
+        filename="decrypt_$(date +%Y%m%d_%H%M%S)"
+    fi
+    
+    echo -e "${YELLOW}解密设置:${RESET}"
+    echo ""
+    
+    read -p "密钥 (格式: KID:KEY 或直接输入KEY): " key
+    read -p "IV (留空自动检测): " iv
+    read -p "密钥文件路径 (留空跳过): " key_text_file
+    
+    echo -e "${YELLOW}解密引擎:${RESET}"
+    echo "1) MP4DECRYPT (默认)"
+    echo "2) FFMPEG"
+    echo "3) SHAKA_PACKAGER"
+    read -p "请选择解密引擎 (1-3, 默认1): " decryption_engine_choice
+    
+    local decryption_engine="MP4DECRYPT"
+    case $decryption_engine_choice in
+        2) decryption_engine="FFMPEG" ;;
+        3) decryption_engine="SHAKA_PACKAGER" ;;
+    esac
+    
+    read -p "解密工具路径 (留空使用默认): " decryption_binary_path
+    
+    # 构建命令
+    local cmd="$REfile \"$link\" --save-name \"$filename\""
+    cmd+=" --ffmpeg-binary-path \"$ffmpeg\""
+    cmd+=" --tmp-dir \"$TempDir\""
+    cmd+=" --save-dir \"$SaveDir\""
+    cmd+=" --ui-language $Language"
+    cmd+=" --log-level $LogLevel"
+    cmd+=" --del-after-done"
+    
+    if [[ -n "$key" ]]; then
+        cmd+=" --key $key"
+    fi
+    
+    if [[ -n "$iv" ]]; then
+        cmd+=" --custom-hls-iv $iv"
+    fi
+    
+    if [[ -n "$key_text_file" ]]; then
+        cmd+=" --key-text-file \"$key_text_file\""
+    fi
+    
+    cmd+=" --decryption-engine $decryption_engine"
+    
+    if [[ -n "$decryption_binary_path" ]]; then
+        cmd+=" --decryption-binary-path \"$decryption_binary_path\""
+    fi
+    
+    echo ""
+    echo -e "${PURPLE}执行命令:${RESET}"
+    echo "$cmd"
+    echo ""
+    
+    read -p "确认开始解密下载? (y/N): " confirm
+    if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
+        log "INFO" "开始加密视频解密: $link"
+        eval "$cmd"
+        local exit_code=$?
+        
+        # 清理空的临时目录
+        cleanup_empty_temp_dirs
+        
+        if [[ $exit_code -eq 0 ]]; then
+            echo -e "${GREEN}解密下载完成!${RESET}"
+            log "INFO" "加密视频解密完成: $filename"
+        else
+            echo -e "${RED}解密下载失败!${RESET}"
+            log "ERROR" "加密视频解密失败，退出码: $exit_code"
+        fi
+    fi
+}
+
+# 部分分片下载
+partial_download() {
+    echo -e "${CYAN}=== 部分分片下载 ===${RESET}"
+    echo ""
+    
+    read -p "请输入视频链接: " link
+    if [[ -z "$link" ]]; then
+        echo -e "${RED}链接不能为空${RESET}"
+        return 1
+    fi
+    
+    read -p "请输入保存文件名: " filename
+    if [[ -z "$filename" ]]; then
+        filename="partial_$(date +%Y%m%d_%H%M%S)"
+    fi
+    
+    echo -e "${YELLOW}分片范围设置:${RESET}"
+    echo ""
+    
+    read -p "起始分片 (从0开始): " start_segment
+    read -p "结束分片 (留空下载到结尾): " end_segment
+    read -p "自定义范围 (留空使用上面的设置): " custom_range
+    
+    # 构建命令
+    local cmd="$REfile \"$link\" --save-name \"$filename\""
+    cmd+=" --ffmpeg-binary-path \"$ffmpeg\""
+    cmd+=" --tmp-dir \"$TempDir\""
+    cmd+=" --save-dir \"$SaveDir\""
+    cmd+=" --ui-language $Language"
+    cmd+=" --log-level $LogLevel"
+    
+    if [[ -n "$custom_range" ]]; then
+        cmd+=" --custom-range $custom_range"
+    else
+        if [[ -n "$start_segment" ]]; then
+            cmd+=" --segment-start $start_segment"
+        fi
+        
+        if [[ -n "$end_segment" ]]; then
+            cmd+=" --segment-end $end_segment"
+        fi
+    fi
+    
+    echo ""
+    echo -e "${PURPLE}执行命令:${RESET}"
+    echo "$cmd"
+    echo ""
+    
+    read -p "确认开始部分下载? (y/N): " confirm
+    if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
+        log "INFO" "开始部分分片下载: $link"
+        eval "$cmd"
+        local exit_code=$?
+        
+        # 清理空的临时目录
+        cleanup_empty_temp_dirs
+        
+        if [[ $exit_code -eq 0 ]]; then
+            echo -e "${GREEN}部分分片下载完成!${RESET}"
+            log "INFO" "部分分片下载完成: $filename"
+        else
+            echo -e "${RED}部分分片下载失败!${RESET}"
+            log "ERROR" "部分分片下载失败，退出码: $exit_code"
+        fi
+    fi
+}
+
+# 外部媒体混流
+external_mux() {
+    echo -e "${CYAN}=== 外部媒体混流 ===${RESET}"
+    echo ""
+    
+    read -p "请输入视频链接: " link
+    if [[ -z "$link" ]]; then
+        echo -e "${RED}链接不能为空${RESET}"
+        return 1
+    fi
+    
+    read -p "请输入保存文件名: " filename
+    if [[ -z "$filename" ]]; then
+        filename="mux_$(date +%Y%m%d_%H%M%S)"
+    fi
+    
+    read -p "外部音频文件路径: " audio_file
+    read -p "外部字幕文件路径: " subtitle_file
+    
+    # 构建命令
+    local cmd="$REfile \"$link\" --save-name \"$filename\""
+    cmd+=" --ffmpeg-binary-path \"$ffmpeg\""
+    cmd+=" --tmp-dir \"$TempDir\""
+    cmd+=" --save-dir \"$SaveDir\""
+    cmd+=" --ui-language $Language"
+    cmd+=" --log-level $LogLevel"
+    
+    if [[ -n "$audio_file" ]]; then
+        cmd+=" --external-audio \"$audio_file\""
+    fi
+    
+    if [[ -n "$subtitle_file" ]]; then
+        cmd+=" --external-subtitle \"$subtitle_file\""
+    fi
+    
+    echo ""
+    echo -e "${PURPLE}执行命令:${RESET}"
+    echo "$cmd"
+    echo ""
+    
+    read -p "确认开始混流下载? (y/N): " confirm
+    if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
+        log "INFO" "开始外部媒体混流: $link"
+        eval "$cmd"
+        local exit_code=$?
+        
+        # 清理空的临时目录
+        cleanup_empty_temp_dirs
+        
+        if [[ $exit_code -eq 0 ]]; then
+            echo -e "${GREEN}混流下载完成!${RESET}"
+            log "INFO" "外部媒体混流完成: $filename"
+        else
+            echo -e "${RED}混流下载失败!${RESET}"
+            log "ERROR" "外部媒体混流失败，退出码: $exit_code"
+        fi
+    fi
+}
+
+# 直播录制高级设置
+live_record_advanced() {
+    echo -e "${CYAN}=== 直播录制高级设置 ===${RESET}"
+    echo ""
+    
+    read -p "请输入直播链接: " link
+    if [[ -z "$link" ]]; then
+        echo -e "${RED}链接不能为空${RESET}"
+        return 1
+    fi
+    
+    read -p "请输入保存文件名: " filename
+    if [[ -z "$filename" ]]; then
+        filename="live_$(date +%Y%m%d_%H%M%S)"
+    fi
+    
+    echo -e "${YELLOW}录制设置:${RESET}"
+    echo ""
+    
+    read -p "录制时长限制 (格式: HH:mm:ss, 留空无限制): " record_limit
+    read -p "录制等待时间(秒): " wait_time
+    read -p "首次获取分片数量 (默认: 16): " take_count
+    
+    echo -e "${YELLOW}合并选项:${RESET}"
+    read -p "实时合并? (y/N): " real_time_merge
+    read -p "保留分片? (Y/n): " keep_segments
+    read -p "通过管道+ffmpeg实时混流到TS文件? (y/N): " pipe_mux
+    
+    echo -e "${YELLOW}其他选项:${RESET}"
+    read -p "以点播方式下载直播流? (y/N): " perform_as_vod
+    read -p "通过读取音频文件的起始时间修正VTT字幕? (y/N): " fix_vtt_by_audio
+    
+    # 构建命令
+    local cmd="$REfile \"$link\" --save-name \"$filename\""
+    cmd+=" --live-recording"
+    cmd+=" --ffmpeg-binary-path \"$ffmpeg\""
+    cmd+=" --tmp-dir \"$TempDir\""
+    cmd+=" --save-dir \"$SaveDir\""
+    cmd+=" --ui-language $Language"
+    cmd+=" --log-level $LogLevel"
+    
+    if [[ "$AutoSelect" == "true" ]]; then
+        cmd+=" --auto-select"
+    fi
+    
+    if [[ -n "$record_limit" ]]; then
+        cmd+=" --live-record-limit $record_limit"
+    fi
+    
+    if [[ -n "$wait_time" ]]; then
+        cmd+=" --live-wait-time $wait_time"
+    fi
+    
+    if [[ -n "$take_count" ]]; then
+        cmd+=" --live-take-count $take_count"
+    fi
+    
+    [[ "$real_time_merge" == "y" || "$real_time_merge" == "Y" ]] && cmd+=" --live-real-time-merge"
+    [[ "$keep_segments" != "n" && "$keep_segments" != "N" ]] && cmd+=" --live-keep-segments"
+    [[ "$pipe_mux" == "y" || "$pipe_mux" == "Y" ]] && cmd+=" --live-pipe-mux"
+    [[ "$perform_as_vod" == "y" || "$perform_as_vod" == "Y" ]] && cmd+=" --live-perform-as-vod"
+    [[ "$fix_vtt_by_audio" == "y" || "$fix_vtt_by_audio" == "Y" ]] && cmd+=" --live-fix-vtt-by-audio"
+    
+    echo ""
+    echo -e "${PURPLE}执行命令:${RESET}"
+    echo "$cmd"
+    echo ""
+    
+    read -p "确认开始直播录制? (y/N): " confirm
+    if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
+        log "INFO" "开始直播录制(高级): $link"
+        eval "$cmd"
+        local exit_code=$?
+        
+        # 清理空的临时目录
+        cleanup_empty_temp_dirs
+        
+        if [[ $exit_code -eq 0 ]]; then
+            echo -e "${GREEN}直播录制完成!${RESET}"
+            log "INFO" "直播录制完成: $filename"
+        else
+            echo -e "${RED}直播录制失败!${RESET}"
+            log "ERROR" "直播录制失败，退出码: $exit_code"
+        fi
+    fi
+}
+
+# 批量任务管理
+batch_task_management() {
+    echo -e "${CYAN}=== 批量任务管理 ===${RESET}"
+    echo ""
+    
+    echo -e "${WHITE}1. 创建批量任务${RESET}"
+    echo -e "${WHITE}2. 查看任务状态${RESET}"
+    echo -e "${WHITE}3. 暂停任务${RESET}"
+    echo -e "${WHITE}4. 恢复任务${RESET}"
+    echo -e "${WHITE}5. 删除任务${RESET}"
+    echo -e "${WHITE}0. 返回${RESET}"
+    echo ""
+    
+    read -p "请选择操作: " choice
+    
+    case $choice in
+        1) create_batch_task ;;
+        2) show_task_status ;;
+        3) pause_task ;;
+        4) resume_task ;;
+        5) delete_task ;;
+        0) return 0 ;;
+        *) echo -e "${RED}无效选择${RESET}" ;;
+    esac
+}
+
+# 创建批量任务
+create_batch_task() {
+    echo -e "${BLUE}创建批量任务...${RESET}"
+    read -p "请输入任务名称: " task_name
+    read -p "请输入链接文件路径: " link_file
+    
+    if [[ ! -f "$link_file" ]]; then
+        echo -e "${RED}链接文件不存在${RESET}"
+        return 1
+    fi
+    
+    local task_dir="$SCRIPT_DIR/tasks/$task_name"
+    mkdir -p "$task_dir"
+    
+    cp "$link_file" "$task_dir/links.txt"
+    echo "$(date)" > "$task_dir/created.txt"
+    echo "pending" > "$task_dir/status.txt"
+    
+    echo -e "${GREEN}批量任务创建成功: $task_name${RESET}"
+}
+
+# 查看任务状态
+show_task_status() {
+    echo -e "${BLUE}任务状态:${RESET}"
+    local tasks_dir="$SCRIPT_DIR/tasks"
+    
+    if [[ ! -d "$tasks_dir" ]]; then
+        echo -e "${YELLOW}暂无任务${RESET}"
+        return 0
+    fi
+    
+    for task_dir in "$tasks_dir"/*; do
+        if [[ -d "$task_dir" ]]; then
+            local task_name=$(basename "$task_dir")
+            local status=""
+            if [[ -f "$task_dir/status.txt" ]]; then
+                status=$(cat "$task_dir/status.txt")
+            fi
+            echo -e "$task_name: $status"
+        fi
+    done
+}
+
+# 暂停任务
+pause_task() {
+    read -p "请输入任务名称: " task_name
+    local task_dir="$SCRIPT_DIR/tasks/$task_name"
+    
+    if [[ ! -d "$task_dir" ]]; then
+        echo -e "${RED}任务不存在${RESET}"
+        return 1
+    fi
+    
+    echo "paused" > "$task_dir/status.txt"
+    echo -e "${GREEN}任务已暂停${RESET}"
+}
+
+# 恢复任务
+resume_task() {
+    read -p "请输入任务名称: " task_name
+    local task_dir="$SCRIPT_DIR/tasks/$task_name"
+    
+    if [[ ! -d "$task_dir" ]]; then
+        echo -e "${RED}任务不存在${RESET}"
+        return 1
+    fi
+    
+    echo "running" > "$task_dir/status.txt"
+    echo -e "${GREEN}任务已恢复${RESET}"
+}
+
+# 删除任务
+delete_task() {
+    read -p "请输入任务名称: " task_name
+    local task_dir="$SCRIPT_DIR/tasks/$task_name"
+    
+    if [[ ! -d "$task_dir" ]]; then
+        echo -e "${RED}任务不存在${RESET}"
+        return 1
+    fi
+    
+    read -p "确认删除任务 $task_name? (y/N): " confirm
+    if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
+        rm -rf "$task_dir"
+        echo -e "${GREEN}任务已删除${RESET}"
+    fi
+}
+
+# 性能监控
+performance_monitor() {
+    echo -e "${CYAN}=== 性能监控 ===${RESET}"
+    echo ""
+    
+    echo -e "${BLUE}系统资源使用情况:${RESET}"
+    echo -e "CPU使用率: $(top -l 1 | grep "CPU usage" | awk '{print $3}' | cut -d'%' -f1)%"
+    echo -e "内存使用率: $(top -l 1 | grep "PhysMem" | awk '{print $2}' | cut -d'%' -f1)%"
+    echo -e "磁盘使用率: $(df -h . | tail -1 | awk '{print $5}' | cut -d'%' -f1)%"
+    
+    echo ""
+    echo -e "${BLUE}网络连接:${RESET}"
+    netstat -an | grep ESTABLISHED | wc -l | xargs echo "活跃连接数:"
+    
+    echo ""
+    echo -e "${BLUE}进程信息:${RESET}"
+    ps aux | grep -E "(N_m3u8DL-RE|ffmpeg)" | grep -v grep || echo "无相关进程运行"
+}
+
+# 网络诊断工具
+network_diagnosis() {
+    echo -e "${CYAN}=== 网络诊断工具 ===${RESET}"
+    echo ""
+    
+    read -p "请输入要诊断的URL: " url
+    if [[ -z "$url" ]]; then
+        echo -e "${RED}URL不能为空${RESET}"
+        return 1
+    fi
+    
+    echo -e "${BLUE}正在诊断: $url${RESET}"
+    echo ""
+    
+    # 检查URL是否可访问
+    echo -e "${YELLOW}1. 检查URL可访问性...${RESET}"
+    if command -v curl >/dev/null 2>&1; then
+        local response_code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 "$url")
+        if [[ "$response_code" =~ ^2[0-9][0-9]$ ]]; then
+            echo -e "${GREEN}  ✓ URL可访问 (HTTP $response_code)${RESET}"
+        elif [[ "$response_code" =~ ^4[0-9][0-9]$ ]]; then
+            echo -e "${RED}  ✗ 客户端错误 (HTTP $response_code)${RESET}"
+        elif [[ "$response_code" =~ ^5[0-9][0-9]$ ]]; then
+            echo -e "${RED}  ✗ 服务器错误 (HTTP $response_code)${RESET}"
+        else
+            echo -e "${RED}  ✗ 无法连接 ($response_code)${RESET}"
+        fi
+    else
+        echo -e "${RED}  ✗ 未找到curl命令${RESET}"
+    fi
+    
+    # 检查m3u8文件内容
+    echo -e "${YELLOW}2. 检查m3u8文件内容...${RESET}"
+    if command -v curl >/dev/null 2>&1; then
+        local head_content=$(curl -s --connect-timeout 10 "$url" | head -20)
+        if echo "$head_content" | grep -q "#EXTM3U"; then
+            echo -e "${GREEN}  ✓ 检测到有效的m3u8文件${RESET}"
+        else
+            echo -e "${RED}  ✗ 未检测到有效的m3u8文件${RESET}"
+            echo -e "${BLUE}  文件前20行内容:${RESET}"
+            echo "$head_content"
+        fi
+    fi
+    
+    # DNS解析检查
+    echo -e "${YELLOW}3. DNS解析检查...${RESET}"
+    local domain=$(echo "$url" | sed -E 's|^https?://([^/]+).*|\1|')
+    if command -v nslookup >/dev/null 2>&1; then
+        if nslookup "$domain" >/dev/null 2>&1; then
+            echo -e "${GREEN}  ✓ DNS解析成功: $domain${RESET}"
+        else
+            echo -e "${RED}  ✗ DNS解析失败: $domain${RESET}"
+        fi
+    else
+        echo -e "${YELLOW}  - 未找到nslookup命令${RESET}"
+    fi
+    
+    echo ""
+    echo -e "${GREEN}网络诊断完成${RESET}"
+}
+
+# 主循环
+main() {
+    while true; do
+        show_advanced_menu
+        read -p "请选择操作 (0-9): " choice
+        
+        case $choice in
+            1) custom_download ;;
+            2) subtitle_extract ;;
+            3) audio_video_separate ;;
+            4) decrypt_video ;;
+            5) partial_download ;;
+            6) external_mux ;;
+            7) live_record_advanced ;;
+            8) batch_task_management ;;
+            9) performance_monitor ;;
+            0) 
+                echo -e "${GREEN}返回主程序${RESET}"
+                exit 0
+                ;;
+            *) 
+                echo -e "${RED}无效选择，请重新输入${RESET}"
+                sleep 1
+                ;;
+        esac
+        
+        echo ""
+        read -p "按回车键返回高级菜单..."
+    done
+}
+
+# 启动程序
+main "$@" 
