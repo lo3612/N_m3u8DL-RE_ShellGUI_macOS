@@ -40,6 +40,17 @@ log() {
     esac
 }
 
+# 清理空的临时目录
+cleanup_empty_temp_dirs() {
+    # 删除空的目录，包括只包含.DS_Store文件的目录（MacOS系统文件）
+    if [[ -d "$TempDir" ]]; then
+        # 先删除所有.DS_Store文件
+        find "$TempDir" -name ".DS_Store" -type f -delete 2>/dev/null
+        # 再删除所有空目录
+        find "$TempDir" -type d -empty -delete 2>/dev/null
+    fi
+}
+
 # 显示高级菜单
 show_advanced_menu() {
     clear
@@ -134,6 +145,9 @@ custom_download() {
         eval "$cmd"
         local exit_code=$?
         
+        # 清理空的临时目录
+        cleanup_empty_temp_dirs
+        
         if [[ $exit_code -eq 0 ]]; then
             echo -e "${GREEN}下载完成!${RESET}"
             log "INFO" "自定义参数下载完成: $filename"
@@ -185,6 +199,9 @@ subtitle_extract() {
         log "INFO" "开始字幕提取: $link"
         eval "$cmd"
         local exit_code=$?
+        
+        # 清理空的临时目录
+        cleanup_empty_temp_dirs
         
         if [[ $exit_code -eq 0 ]]; then
             echo -e "${GREEN}字幕提取完成!${RESET}"
@@ -247,6 +264,9 @@ audio_video_separate() {
         eval "$cmd"
         local exit_code=$?
         
+        # 清理空的临时目录
+        cleanup_empty_temp_dirs
+        
         if [[ $exit_code -eq 0 ]]; then
             echo -e "${GREEN}分离下载完成!${RESET}"
             log "INFO" "音视频分离下载完成: $filename"
@@ -303,6 +323,9 @@ decrypt_video() {
         log "INFO" "开始加密视频解密: $link"
         eval "$cmd"
         local exit_code=$?
+        
+        # 清理空的临时目录
+        cleanup_empty_temp_dirs
         
         if [[ $exit_code -eq 0 ]]; then
             echo -e "${GREEN}解密下载完成!${RESET}"
@@ -362,6 +385,9 @@ partial_download() {
         eval "$cmd"
         local exit_code=$?
         
+        # 清理空的临时目录
+        cleanup_empty_temp_dirs
+        
         if [[ $exit_code -eq 0 ]]; then
             echo -e "${GREEN}部分下载完成!${RESET}"
             log "INFO" "部分分片下载完成: $filename"
@@ -417,6 +443,9 @@ external_mux() {
         log "INFO" "开始外部媒体混流: $link"
         eval "$cmd"
         local exit_code=$?
+        
+        # 清理空的临时目录
+        cleanup_empty_temp_dirs
         
         if [[ $exit_code -eq 0 ]]; then
             echo -e "${GREEN}混流下载完成!${RESET}"
@@ -479,6 +508,9 @@ advanced_live_recording() {
         log "INFO" "开始直播录制高级设置: $link"
         eval "$cmd"
         local exit_code=$?
+        
+        # 清理空的临时目录
+        cleanup_empty_temp_dirs
         
         if [[ $exit_code -eq 0 ]]; then
             echo -e "${GREEN}高级录制完成!${RESET}"
