@@ -22,14 +22,17 @@ check_updates() {
     
     if [[ -z "$remote_version" ]]; then
         echo -e "${RED}无法获取远程版本信息${RESET}"
+        log "ERROR" "无法获取远程版本信息"
         return 1
     fi
     
     echo -e "本地版本: ${YELLOW}${local_version:-"未安装"}${RESET}"
     echo -e "远程版本: ${GREEN}$remote_version${RESET}"
+    log "INFO" "本地版本: ${local_version:-"未安装"}, 远程版本: $remote_version"
     
     if [[ -z "$local_version" ]]; then
         echo -e "${YELLOW}本地未安装，将进行首次安装${RESET}"
+        log "INFO" "本地未安装，将进行首次安装"
         return 0
     fi
     
@@ -39,9 +42,11 @@ check_updates() {
     
     if [[ "$local_major" == "$remote_major" ]]; then
         echo -e "${GREEN}已是最新版本${RESET}"
+        log "INFO" "已是最新版本"
         return 2
     else
         echo -e "${YELLOW}发现新版本，需要更新${RESET}"
+        log "INFO" "发现新版本，需要更新"
         return 0
     fi
 }
@@ -49,15 +54,46 @@ check_updates() {
 # 清理备份
 cleanup_backups() {
     echo -e "${BLUE}清理备份文件...${RESET}"
+    log "INFO" "清理备份文件"
+    
+    local cleaned=false
     
     if [[ -f "N_m3u8DL-RE.backup" ]]; then
         rm -f "N_m3u8DL-RE.backup"
         echo -e "${GREEN}已清理N_m3u8DL-RE备份${RESET}"
+        log "INFO" "已清理N_m3u8DL-RE备份"
+        cleaned=true
     fi
     
     if [[ -f "ffmpeg.backup" ]]; then
         rm -f "ffmpeg.backup"
         echo -e "${GREEN}已清理ffmpeg备份${RESET}"
+        log "INFO" "已清理ffmpeg备份"
+        cleaned=true
+    fi
+    
+    if [[ "$cleaned" == false ]]; then
+        echo -e "${BLUE}没有备份文件需要清理${RESET}"
+        log "INFO" "没有备份文件需要清理"
+    fi
+}
+
+# 检查磁盘空间
+check_disk_space() {
+    echo -e "${BLUE}检查磁盘空间...${RESET}"
+    log "INFO" "检查磁盘空间"
+    
+    local required_space=200  # MB
+    local available_space=$(df "$SCRIPT_DIR" | awk 'NR==2 {print int($4/1024)}')
+    
+    if [[ $available_space -lt $required_space ]]; then
+        echo -e "${RED}磁盘空间不足，需要至少 ${required_space}MB 可用空间${RESET}"
+        log "ERROR" "磁盘空间不足，需要至少 ${required_space}MB 可用空间，当前可用 ${available_space}MB"
+        return 1
+    else
+        echo -e "${GREEN}磁盘空间充足 (${available_space}MB 可用)${RESET}"
+        log "INFO" "磁盘空间充足 (${available_space}MB 可用)"
+        return 0
     fi
 }
 
@@ -65,6 +101,7 @@ cleanup_backups() {
 main() {
     local update_n_m3u8dl=false
     local update_ffmpeg=false
+    local force_update=false
     
     # 检查参数
     while [[ $# -gt 0 ]]; do
@@ -82,13 +119,22 @@ main() {
                 update_ffmpeg=true
                 shift
                 ;;
+            --force)
+                force_update=true
+                shift
+                ;;
             --cleanup)
                 cleanup_backups
                 exit 0
                 ;;
             *)
                 echo -e "${RED}未知参数: $1${RESET}"
-                echo -e "用法: $0 [--n-m3u8dl|--ffmpeg|--all|--cleanup]"
+                echo -e "用法: $0 [--n-m3u8dl|--ffmpeg|--all|--force|--cleanup]"
+                echo -e "  --n-m3u8dl  更新 N_m3u8DL-RE"
+                echo -e "  --ffmpeg    更新 ffmpeg"
+                echo -e "  --all       更新所有组件（默认）"
+                echo -e "  --force     强制更新，即使已是最新版本"
+                echo -e "  --cleanup   清理备份文件"
                 exit 1
                 ;;
         esac
@@ -100,22 +146,38 @@ main() {
         update_ffmpeg=true
     fi
     
+    # 检查磁盘空间
+    if ! check_disk_space; then
+        exit 1
+    fi
+    
     # 更新N_m3u8DL-RE
     if [[ "$update_n_m3u8dl" == "true" ]]; then
         echo ""
         echo -e "${CYAN}=== 更新N_m3u8DL-RE ===${RESET}"
+        log "INFO" "开始更新N_m3u8DL-RE"
         
-        local check_result
-        check_updates
-        check_result=$?
+        local check_result=0
+        if [[ "$force_update" == false ]]; then
+            check_updates
+            check_result=$?
+        else
+            echo -e "${YELLOW}强制更新模式${RESET}"
+            log "INFO" "强制更新模式"
+        fi
         
-        if [[ $check_result -eq 0 ]]; then
+        if [[ $check_result -eq 0 ]] || [[ "$force_update" == true ]]; then
             if ! download_n_m3u8dl_re "update" "true"; then
                 echo -e "${RED}N_m3u8DL-RE 更新失败${RESET}"
+                log "ERROR" "N_m3u8DL-RE 更新失败"
                 exit 1
+            else
+                echo -e "${GREEN}N_m3u8DL-RE 更新成功${RESET}"
+                log "INFO" "N_m3u8DL-RE 更新成功"
             fi
         elif [[ $check_result -eq 2 ]]; then
             echo -e "${GREEN}N_m3u8DL-RE 已是最新版本${RESET}"
+            log "INFO" "N_m3u8DL-RE 已是最新版本"
         fi
     fi
     
@@ -123,21 +185,35 @@ main() {
     if [[ "$update_ffmpeg" == "true" ]]; then
         echo ""
         echo -e "${CYAN}=== 更新ffmpeg ===${RESET}"
+        log "INFO" "开始更新ffmpeg"
         
         if [[ ! -f "ffmpeg" ]]; then
             echo -e "${YELLOW}ffmpeg未安装，将进行首次安装${RESET}"
+            log "INFO" "ffmpeg未安装，将进行首次安装"
         fi
         
-        if ! download_ffmpeg "update" "true"; then
+        # 如果是强制更新，备份现有版本
+        local backup_ffmpeg="true"
+        if [[ "$force_update" == true && -f "ffmpeg" ]]; then
+            echo -e "${YELLOW}强制更新ffmpeg${RESET}"
+            log "INFO" "强制更新ffmpeg"
+        fi
+        
+        if ! download_ffmpeg "update" "$backup_ffmpeg"; then
             echo -e "${RED}ffmpeg 更新失败${RESET}"
+            log "ERROR" "ffmpeg 更新失败"
             exit 1
+        else
+            echo -e "${GREEN}ffmpeg 更新成功${RESET}"
+            log "INFO" "ffmpeg 更新成功"
         fi
     fi
     
     echo ""
     echo -e "${GREEN}${BOLD}更新完成!${RESET}"
+    log "INFO" "更新完成"
     echo -e "${CYAN}现在可以运行 ./start.sh 启动程序${RESET}"
 }
 
 # 运行主函数
-main "$@" 
+main "$@"
