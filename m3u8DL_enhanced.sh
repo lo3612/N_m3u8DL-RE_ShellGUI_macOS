@@ -169,7 +169,8 @@ batch_download() {
         return 1
     fi
     
-    local line_count=$(wc -l < "$file_path")
+。/    local line_count=$(grep -c '^' "$file_path" 2>/dev/null || echo 0)
+    
     echo -e "${BLUE}检测到 $line_count 个链接${RESET}"
     
     if ! confirm_action "确认开始批量下载?"; then
@@ -180,13 +181,19 @@ batch_download() {
     local fail_count=0
     local current=0
     
-    while IFS= read -r link; do
+    # 使用while循环读取文件，确保兼容性
+    while IFS= read -r link || [[ -n "$link" ]]; do
+        # 跳过空行
+        if [[ -z "$link" ]]; then
+            continue
+        fi
+        
         # 解析带名称格式的链接
         local actual_link="$link"
         local custom_name=""
         if [[ "$link" == *'$'* ]]; then
-            custom_name="${link%%$*}"
-            actual_link="${link#*$}"
+            custom_name="${link%%\$*}"  # 使用\$转义$
+            actual_link="${link#*\$}"   # 使用\$转义$
         fi
         
         current=$((current + 1))
@@ -200,6 +207,9 @@ batch_download() {
             filename="$custom_name"
         fi
         
+        # 清理文件名中的特殊字符
+        filename=$(echo "$filename" | sed 's/[<>:"/\\|?*]/_/g' | sed 's/[$]/_/g')
+        
         local cmd="$REfile \"$actual_link\" --save-name \"$filename\""
         cmd+=" --thread-count $ThreadCount"
         cmd+=" --download-retry-count $RetryCount"
@@ -209,6 +219,7 @@ batch_download() {
         cmd+=" --save-dir \"$SaveDir\""
         cmd+=" --ui-language $Language"
         cmd+=" --log-level $LogLevel"
+        cmd+=" --force-ansi-console"
         
         # 可选参数
         [[ "$AutoSelect" == "true" ]] && cmd+=" --auto-select"
@@ -220,28 +231,55 @@ batch_download() {
         [[ "$AppendUrlParams" == "true" ]] && cmd+=" --append-url-params"
         
         log "INFO" "批量下载: $actual_link"
-        # 添加调试信息
-        eval "$cmd --debug"
+        echo -e "${BLUE}执行命令: $cmd${RESET}"
         
-        # 清理空的临时目录
-        cleanup_empty_temp_dirs
+        # 执行命令并捕获输出
+        local start_time=$(date +%s)
+        eval "$cmd" &
+        local cmd_pid=$!
         
-        if [[ $? -eq 0 ]]; then
+        # 显示实时进度
+        echo -e "${BLUE}下载进度:${RESET}"
+        local last_progress_line=""
+        
+        # 等待命令完成并显示进度
+        while kill -0 $cmd_pid 2>/dev/null; do
+            # 检查是否超时
+            local current_time=$(date +%s)
+            local elapsed_time=$((current_time - start_time))
+            
+            if [[ $elapsed_time -gt $Timeout ]]; then
+                echo -e "${RED}下载超时 ($Timeout 秒)${RESET}"
+                log "ERROR" "下载超时: $actual_link"
+                kill $cmd_pid 2>/dev/null
+                break
+            fi
+            
+            sleep 1
+        done
+        
+        # 等待进程结束并获取退出码
+        wait $cmd_pid
+        local exit_code=$?
+        
+        if [[ $exit_code -eq 0 ]]; then
             echo -e "${GREEN}✓ 下载成功${RESET}"
             success_count=$((success_count + 1))
             log "INFO" "批量下载成功: $filename"
         else
             echo -e "${RED}✗ 下载失败${RESET}"
             fail_count=$((fail_count + 1))
-            log "ERROR" "批量下载失败: $actual_link"
+            log "ERROR" "批量下载失败: $actual_link (退出码: $exit_code)"
             # 提供错误诊断信息
             echo -e "${YELLOW}可能的解决方案:${RESET}"
             echo -e "${YELLOW}1. 检查网络连接是否正常${RESET}"
             echo -e "${YELLOW}2. 确认链接是否有效${RESET}"
             echo -e "${YELLOW}3. 检查防火墙或代理设置${RESET}"
             echo -e "${YELLOW}4. 尝试降低线程数(在设置中修改)${RESET}"
+            echo -e "${YELLOW}5. 增加超时时间(在设置中修改)${RESET}"
         fi
         
+        # 显示最终进度
         show_progress "$current" "$line_count"
     done < "$file_path"
     
@@ -579,6 +617,16 @@ cleanup_empty_temp_dirs() {
         find "$TempDir" -type d -empty -delete 2>/dev/null
     fi
 }
+
+
+
+
+
+
+
+
+
+
 
 
 
