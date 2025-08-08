@@ -104,6 +104,10 @@ custom_download() {
     
     read -p "代理 (如: http://127.0.0.1:8888, 留空无代理): " custom_proxy
     
+    read -p "是否使用系统代理? (y/N): " use_system_proxy
+    read -p "是否实时解密MP4分片? (y/N): " real_time_decrypt
+    read -p "是否二进制合并? (y/N): " binary_merge
+    
     # 构建命令
     local cmd="$REfile \"$link\" --save-name \"$filename\""
     cmd+=" --thread-count $custom_threads"
@@ -134,6 +138,10 @@ custom_download() {
         fi
     fi
     
+    [[ "$use_system_proxy" == "y" || "$use_system_proxy" == "Y" ]] && cmd+=" --use-system-proxy"
+    [[ "$real_time_decrypt" == "y" || "$real_time_decrypt" == "Y" ]] && cmd+=" --mp4-real-time-decryption"
+    [[ "$binary_merge" == "y" || "$binary_merge" == "Y" ]] && cmd+=" --binary-merge"
+    
     echo ""
     echo -e "${PURPLE}执行命令:${RESET}"
     echo "$cmd"
@@ -141,7 +149,7 @@ custom_download() {
     
     read -p "确认开始下载? (y/N): " confirm
     if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
-        log "INFO" "开始自定义参数下载: $link"
+        log "INFO" "开始自定义下载: $link"
         eval "$cmd"
         local exit_code=$?
         
@@ -150,10 +158,10 @@ custom_download() {
         
         if [[ $exit_code -eq 0 ]]; then
             echo -e "${GREEN}下载完成!${RESET}"
-            log "INFO" "自定义参数下载完成: $filename"
+            log "INFO" "自定义下载完成: $filename"
         else
             echo -e "${RED}下载失败!${RESET}"
-            log "ERROR" "自定义参数下载失败，退出码: $exit_code"
+            log "ERROR" "自定义下载失败，退出码: $exit_code"
         fi
     fi
 }
@@ -293,8 +301,26 @@ decrypt_video() {
         filename="decrypt_$(date +%Y%m%d_%H%M%S)"
     fi
     
-    read -p "密钥 (留空自动检测): " key
+    echo -e "${YELLOW}解密设置:${RESET}"
+    echo ""
+    
+    read -p "密钥 (格式: KID:KEY 或直接输入KEY): " key
     read -p "IV (留空自动检测): " iv
+    read -p "密钥文件路径 (留空跳过): " key_text_file
+    
+    echo -e "${YELLOW}解密引擎:${RESET}"
+    echo "1) MP4DECRYPT (默认)"
+    echo "2) FFMPEG"
+    echo "3) SHAKA_PACKAGER"
+    read -p "请选择解密引擎 (1-3, 默认1): " decryption_engine_choice
+    
+    local decryption_engine="MP4DECRYPT"
+    case $decryption_engine_choice in
+        2) decryption_engine="FFMPEG" ;;
+        3) decryption_engine="SHAKA_PACKAGER" ;;
+    esac
+    
+    read -p "解密工具路径 (留空使用默认): " decryption_binary_path
     
     # 构建命令
     local cmd="$REfile \"$link\" --save-name \"$filename\""
@@ -303,14 +329,24 @@ decrypt_video() {
     cmd+=" --save-dir \"$SaveDir\""
     cmd+=" --ui-language $Language"
     cmd+=" --log-level $LogLevel"
-    cmd+=" --enable-del-after-done"
+    cmd+=" --del-after-done"
     
     if [[ -n "$key" ]]; then
         cmd+=" --key $key"
     fi
     
     if [[ -n "$iv" ]]; then
-        cmd+=" --iv $iv"
+        cmd+=" --custom-hls-iv $iv"
+    fi
+    
+    if [[ -n "$key_text_file" ]]; then
+        cmd+=" --key-text-file \"$key_text_file\""
+    fi
+    
+    cmd+=" --decryption-engine $decryption_engine"
+    
+    if [[ -n "$decryption_binary_path" ]]; then
+        cmd+=" --decryption-binary-path \"$decryption_binary_path\""
     fi
     
     echo ""
@@ -353,13 +389,12 @@ partial_download() {
         filename="partial_$(date +%Y%m%d_%H%M%S)"
     fi
     
+    echo -e "${YELLOW}分片范围设置:${RESET}"
+    echo ""
+    
     read -p "起始分片 (从0开始): " start_segment
     read -p "结束分片 (留空下载到结尾): " end_segment
-    
-    if [[ -z "$start_segment" ]]; then
-        echo -e "${RED}起始分片不能为空${RESET}"
-        return 1
-    fi
+    read -p "自定义范围 (留空使用上面的设置): " custom_range
     
     # 构建命令
     local cmd="$REfile \"$link\" --save-name \"$filename\""
@@ -368,10 +403,17 @@ partial_download() {
     cmd+=" --save-dir \"$SaveDir\""
     cmd+=" --ui-language $Language"
     cmd+=" --log-level $LogLevel"
-    cmd+=" --segment-start $start_segment"
     
-    if [[ -n "$end_segment" ]]; then
-        cmd+=" --segment-end $end_segment"
+    if [[ -n "$custom_range" ]]; then
+        cmd+=" --custom-range $custom_range"
+    else
+        if [[ -n "$start_segment" ]]; then
+            cmd+=" --segment-start $start_segment"
+        fi
+        
+        if [[ -n "$end_segment" ]]; then
+            cmd+=" --segment-end $end_segment"
+        fi
     fi
     
     echo ""
@@ -389,10 +431,10 @@ partial_download() {
         cleanup_empty_temp_dirs
         
         if [[ $exit_code -eq 0 ]]; then
-            echo -e "${GREEN}部分下载完成!${RESET}"
+            echo -e "${GREEN}部分分片下载完成!${RESET}"
             log "INFO" "部分分片下载完成: $filename"
         else
-            echo -e "${RED}部分下载失败!${RESET}"
+            echo -e "${RED}部分分片下载失败!${RESET}"
             log "ERROR" "部分分片下载失败，退出码: $exit_code"
         fi
     fi
@@ -458,7 +500,7 @@ external_mux() {
 }
 
 # 直播录制高级设置
-advanced_live_recording() {
+live_record_advanced() {
     echo -e "${CYAN}=== 直播录制高级设置 ===${RESET}"
     echo ""
     
@@ -470,42 +512,64 @@ advanced_live_recording() {
     
     read -p "请输入保存文件名: " filename
     if [[ -z "$filename" ]]; then
-        filename="live_advanced_$(date +%Y%m%d_%H%M%S)"
+        filename="live_$(date +%Y%m%d_%H%M%S)"
     fi
     
-    read -p "录制时长限制 (HH:mm:ss, 留空无限制): " record_limit
-    read -p "保持分片 (y/N): " keep_segments
-    read -p "修复VTT字幕 (y/N): " fix_vtt
+    echo -e "${YELLOW}录制设置:${RESET}"
+    echo ""
+    
+    read -p "录制时长限制 (格式: HH:mm:ss, 留空无限制): " record_limit
+    read -p "录制等待时间(秒): " wait_time
+    read -p "首次获取分片数量 (默认: 16): " take_count
+    
+    echo -e "${YELLOW}合并选项:${RESET}"
+    read -p "实时合并? (y/N): " real_time_merge
+    read -p "保留分片? (Y/n): " keep_segments
+    read -p "通过管道+ffmpeg实时混流到TS文件? (y/N): " pipe_mux
+    
+    echo -e "${YELLOW}其他选项:${RESET}"
+    read -p "以点播方式下载直播流? (y/N): " perform_as_vod
+    read -p "通过读取音频文件的起始时间修正VTT字幕? (y/N): " fix_vtt_by_audio
     
     # 构建命令
     local cmd="$REfile \"$link\" --save-name \"$filename\""
+    cmd+=" --live-recording"
     cmd+=" --ffmpeg-binary-path \"$ffmpeg\""
     cmd+=" --tmp-dir \"$TempDir\""
     cmd+=" --save-dir \"$SaveDir\""
     cmd+=" --ui-language $Language"
     cmd+=" --log-level $LogLevel"
-    cmd+=" --live-recording"
+    
+    if [[ "$AutoSelect" == "true" ]]; then
+        cmd+=" --auto-select"
+    fi
     
     if [[ -n "$record_limit" ]]; then
         cmd+=" --live-record-limit $record_limit"
     fi
     
-    if [[ "$keep_segments" == "y" ]]; then
-        cmd+=" --live-keep-segments"
+    if [[ -n "$wait_time" ]]; then
+        cmd+=" --live-wait-time $wait_time"
     fi
     
-    if [[ "$fix_vtt" == "y" ]]; then
-        cmd+=" --live-fix-vtt-by-audio"
+    if [[ -n "$take_count" ]]; then
+        cmd+=" --live-take-count $take_count"
     fi
+    
+    [[ "$real_time_merge" == "y" || "$real_time_merge" == "Y" ]] && cmd+=" --live-real-time-merge"
+    [[ "$keep_segments" != "n" && "$keep_segments" != "N" ]] && cmd+=" --live-keep-segments"
+    [[ "$pipe_mux" == "y" || "$pipe_mux" == "Y" ]] && cmd+=" --live-pipe-mux"
+    [[ "$perform_as_vod" == "y" || "$perform_as_vod" == "Y" ]] && cmd+=" --live-perform-as-vod"
+    [[ "$fix_vtt_by_audio" == "y" || "$fix_vtt_by_audio" == "Y" ]] && cmd+=" --live-fix-vtt-by-audio"
     
     echo ""
     echo -e "${PURPLE}执行命令:${RESET}"
     echo "$cmd"
     echo ""
     
-    read -p "确认开始高级录制? (y/N): " confirm
+    read -p "确认开始直播录制? (y/N): " confirm
     if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
-        log "INFO" "开始直播录制高级设置: $link"
+        log "INFO" "开始直播录制(高级): $link"
         eval "$cmd"
         local exit_code=$?
         
@@ -513,11 +577,11 @@ advanced_live_recording() {
         cleanup_empty_temp_dirs
         
         if [[ $exit_code -eq 0 ]]; then
-            echo -e "${GREEN}高级录制完成!${RESET}"
-            log "INFO" "直播录制高级设置完成: $filename"
+            echo -e "${GREEN}直播录制完成!${RESET}"
+            log "INFO" "直播录制完成: $filename"
         else
-            echo -e "${RED}高级录制失败!${RESET}"
-            log "ERROR" "直播录制高级设置失败，退出码: $exit_code"
+            echo -e "${RED}直播录制失败!${RESET}"
+            log "ERROR" "直播录制失败，退出码: $exit_code"
         fi
     fi
 }
@@ -655,6 +719,67 @@ performance_monitor() {
     ps aux | grep -E "(N_m3u8DL-RE|ffmpeg)" | grep -v grep || echo "无相关进程运行"
 }
 
+# 网络诊断工具
+network_diagnosis() {
+    echo -e "${CYAN}=== 网络诊断工具 ===${RESET}"
+    echo ""
+    
+    read -p "请输入要诊断的URL: " url
+    if [[ -z "$url" ]]; then
+        echo -e "${RED}URL不能为空${RESET}"
+        return 1
+    fi
+    
+    echo -e "${BLUE}正在诊断: $url${RESET}"
+    echo ""
+    
+    # 检查URL是否可访问
+    echo -e "${YELLOW}1. 检查URL可访问性...${RESET}"
+    if command -v curl >/dev/null 2>&1; then
+        local response_code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 "$url")
+        if [[ "$response_code" =~ ^2[0-9][0-9]$ ]]; then
+            echo -e "${GREEN}  ✓ URL可访问 (HTTP $response_code)${RESET}"
+        elif [[ "$response_code" =~ ^4[0-9][0-9]$ ]]; then
+            echo -e "${RED}  ✗ 客户端错误 (HTTP $response_code)${RESET}"
+        elif [[ "$response_code" =~ ^5[0-9][0-9]$ ]]; then
+            echo -e "${RED}  ✗ 服务器错误 (HTTP $response_code)${RESET}"
+        else
+            echo -e "${RED}  ✗ 无法连接 ($response_code)${RESET}"
+        fi
+    else
+        echo -e "${RED}  ✗ 未找到curl命令${RESET}"
+    fi
+    
+    # 检查m3u8文件内容
+    echo -e "${YELLOW}2. 检查m3u8文件内容...${RESET}"
+    if command -v curl >/dev/null 2>&1; then
+        local head_content=$(curl -s --connect-timeout 10 "$url" | head -20)
+        if echo "$head_content" | grep -q "#EXTM3U"; then
+            echo -e "${GREEN}  ✓ 检测到有效的m3u8文件${RESET}"
+        else
+            echo -e "${RED}  ✗ 未检测到有效的m3u8文件${RESET}"
+            echo -e "${BLUE}  文件前20行内容:${RESET}"
+            echo "$head_content"
+        fi
+    fi
+    
+    # DNS解析检查
+    echo -e "${YELLOW}3. DNS解析检查...${RESET}"
+    local domain=$(echo "$url" | sed -E 's|^https?://([^/]+).*|\1|')
+    if command -v nslookup >/dev/null 2>&1; then
+        if nslookup "$domain" >/dev/null 2>&1; then
+            echo -e "${GREEN}  ✓ DNS解析成功: $domain${RESET}"
+        else
+            echo -e "${RED}  ✗ DNS解析失败: $domain${RESET}"
+        fi
+    else
+        echo -e "${YELLOW}  - 未找到nslookup命令${RESET}"
+    fi
+    
+    echo ""
+    echo -e "${GREEN}网络诊断完成${RESET}"
+}
+
 # 主循环
 main() {
     while true; do
@@ -668,7 +793,7 @@ main() {
             4) decrypt_video ;;
             5) partial_download ;;
             6) external_mux ;;
-            7) advanced_live_recording ;;
+            7) live_record_advanced ;;
             8) batch_task_management ;;
             9) performance_monitor ;;
             0) 
