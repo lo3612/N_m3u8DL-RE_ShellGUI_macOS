@@ -2,8 +2,8 @@
 
 # =============================================================================
 # N_m3u8DL-RE 下载管理器
-# 版本: 2.1.0
-# 日期: 2025-6-30
+# 版本: 2.1.1
+# 日期: 2025-8-8
 # =============================================================================
 
 # 引入公共函数库
@@ -20,7 +20,7 @@ LOG_FILE="$SCRIPT_DIR/m3u8dl.log"
 LOCK_FILE="$SCRIPT_DIR/m3u8dl.lock"
 
 # 默认配置
-ThreadCount=32
+ThreadCount=16
 RetryCount=3
 Timeout=10
 SaveDir="$SCRIPT_DIR/downloads"
@@ -120,6 +120,10 @@ single_download() {
     [[ "$WriteMetaJson" == "true" ]] && cmd+=" --write-meta-json"
     [[ "$AppendUrlParams" == "true" ]] && cmd+=" --append-url-params"
     
+    # 确保文件被正确合并和移动
+    cmd+=" --auto-select"
+    cmd+=" --del-after-done"
+    
     echo ""
     echo -e "${PURPLE}执行命令:${RESET}"
     echo "$cmd"
@@ -130,6 +134,9 @@ single_download() {
         # 使用更详细的输出模式来帮助诊断问题
         eval "$cmd"
         local exit_code=$?
+        
+        # 清理空的临时目录
+        cleanup_empty_temp_dirs
         
         if [[ $exit_code -eq 0 ]]; then
             echo -e "${GREEN}下载完成!${RESET}"
@@ -216,6 +223,9 @@ batch_download() {
         # 添加调试信息
         eval "$cmd --debug"
         
+        # 清理空的临时目录
+        cleanup_empty_temp_dirs
+        
         if [[ $? -eq 0 ]]; then
             echo -e "${GREEN}✓ 下载成功${RESET}"
             success_count=$((success_count + 1))
@@ -296,6 +306,9 @@ live_recording() {
         else
             echo -e "${YELLOW}录制进程已结束${RESET}"
         fi
+        
+        # 清理空的临时目录
+        cleanup_empty_temp_dirs
     fi
 }
 
@@ -555,6 +568,17 @@ main() {
 
 # 运行主函数
 main "$@" 
+
+# 清理空的临时目录
+cleanup_empty_temp_dirs() {
+    # 删除空的目录，包括只包含.DS_Store文件的目录（MacOS系统文件）
+    if [[ -d "$TempDir" ]]; then
+        # 先删除所有.DS_Store文件
+        find "$TempDir" -name ".DS_Store" -type f -delete 2>/dev/null
+        # 再删除所有空目录
+        find "$TempDir" -type d -empty -delete 2>/dev/null
+    fi
+}
 
 
 
